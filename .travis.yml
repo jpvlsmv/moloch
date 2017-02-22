@@ -28,7 +28,7 @@ addons:
     -  libffi-dev 
     -  libssl-dev
 before_script:
-- ./easybutton-build.sh -p
+- ./easybutton-build.sh
 cache:
   directories:
   - thirdparty
