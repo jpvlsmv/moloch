@@ -1,4 +1,5 @@
 language: C
+dist: "trusty"
 branches:
   only:
   - /autobuild-.*/
@@ -26,3 +27,14 @@ addons:
     -  xz-utils 
     -  libffi-dev 
     -  libssl-dev
+    -  liblua5.2-dev
+    -  libdaq-dev
+before_script:
+- ./easybutton-build.sh
+cache:
+  directories:
+  - thirdparty
+before_cache:
+  - rm -f $HOME/.cache/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
+script:
+  - make
