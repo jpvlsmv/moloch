@@ -32,4 +32,9 @@ before_script:
 cache:
   directories:
   - thirdparty
-script: true
+script:
+  - make
+  - ( cd capture/plugins/pfring ; make )
+  - ( cd capture/plugins/daq ; make )
+  - ( cd capture/plugins/lua ; make )
+  - ( cd capture/pluings/snf ; make )
