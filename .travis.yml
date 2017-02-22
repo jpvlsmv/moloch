@@ -38,4 +38,3 @@ script:
   - make
   - ( cd capture/plugins/daq ; make )
   - ( cd capture/plugins/lua ; make )
-  - ( cd capture/plugins/snf ; make )
