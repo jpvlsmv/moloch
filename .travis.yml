@@ -27,6 +27,7 @@ addons:
     -  xz-utils 
     -  libffi-dev 
     -  libssl-dev
+    -  liblua5.2-dev
 before_script:
 - ./easybutton-build.sh
 cache:
@@ -36,4 +37,4 @@ script:
   - make
   - ( cd capture/plugins/daq ; make )
   - ( cd capture/plugins/lua ; make )
-  - ( cd capture/pluings/snf ; make )
+  - ( cd capture/plugins/snf ; make )
