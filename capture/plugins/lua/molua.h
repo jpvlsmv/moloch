@@ -1,9 +1,9 @@
 #ifndef _MOLOCH_LUA_
 #define _MOLOCH_LUA_
 #include "moloch.h"
-#include "lua.h"
-#include "lauxlib.h"
-#include "lualib.h"
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 
 extern MolochConfig_t        config;
 
