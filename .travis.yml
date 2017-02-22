@@ -34,7 +34,6 @@ cache:
   - thirdparty
 script:
   - make
-  - ( cd capture/plugins/pfring ; make )
   - ( cd capture/plugins/daq ; make )
   - ( cd capture/plugins/lua ; make )
   - ( cd capture/pluings/snf ; make )
