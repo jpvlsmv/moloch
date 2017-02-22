@@ -173,14 +173,4 @@ cd ..
 echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
 ./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
 
-$MAKE
-if [ $? -ne 0 ]; then
-  echo "MOLOCH: $MAKE failed"
-  exit 1
-fi
-
-if [ $DOPFRING -eq 1 ]; then
-    (cd capture/plugins/pfring; $MAKE)
-fi
-
 exit 0
