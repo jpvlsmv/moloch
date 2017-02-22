@@ -28,6 +28,7 @@ addons:
     -  libffi-dev 
     -  libssl-dev
     -  liblua5.2-dev
+    -  libdaq-dev
 before_script:
 - ./easybutton-build.sh
 cache:
