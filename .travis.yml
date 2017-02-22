@@ -29,3 +29,7 @@ addons:
     -  libssl-dev
 before_script:
 - ./easybutton-build.sh -p
+cache:
+  directories:
+  - thirdparty
+script: true
