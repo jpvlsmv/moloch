@@ -27,3 +27,5 @@ addons:
     -  xz-utils 
     -  libffi-dev 
     -  libssl-dev
+before_script:
+- ./easybutton-build.sh -p
