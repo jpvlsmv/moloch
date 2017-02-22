@@ -52,7 +52,7 @@ if [ -f "/etc/redhat-release" ]; then
   fi
 fi
 
-if [ $(uname) == "FreeBSD" ]; then
+if [ "$(uname)" == "FreeBSD" ]; then
     pkg_add -Fr wget curl pcre flex bison gettext e2fsprogs-libuuid glib gmake libexecinfo
     MAKE=gmake
 fi
@@ -67,7 +67,7 @@ fi
 cd thirdparty
 
 # glib
-if [ $(uname) == "FreeBSD" ]; then
+if [ "$(uname)" == "FreeBSD" ]; then
   #Screw it, use whatever the OS has
   WITHGLIB=" "
 else
