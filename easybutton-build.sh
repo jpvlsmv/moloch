@@ -52,14 +52,6 @@ if [ -f "/etc/redhat-release" ]; then
   fi
 fi
 
-if [ -f "/etc/debian_version" ]; then
-  apt-get -y install wget curl libpcre3-dev uuid-dev libmagic-dev pkg-config g++ flex bison zlib1g-dev libffi-dev gettext libgeoip-dev make libjson-perl libbz2-dev libwww-perl libpng-dev xz-utils libffi-dev libssl-dev
-  if [ $? -ne 0 ]; then
-    echo "MOLOCH - apt-get failed"
-    exit 1
-  fi
-fi
-
 if [ $(uname) == "FreeBSD" ]; then
     pkg_add -Fr wget curl pcre flex bison gettext e2fsprogs-libuuid glib gmake libexecinfo
     MAKE=gmake
