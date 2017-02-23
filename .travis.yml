@@ -60,5 +60,8 @@ before_cache:
 script:
   - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make
-  - ./configure --prefix=$HOME/data/moloch
+  - ./configure --prefix=$HOME/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make install
+after_script:
+  - nm /usr/lib/x86_64-linux-gnu/libpcap.a | grep dlt_to
+  - ldd capture/moloch-capture
