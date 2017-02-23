@@ -1,0 +1,40 @@
+language: C
+dist: "trusty"
+branches:
+  only:
+  - /autobuild-.*/
+addons:
+  apt:
+    packages:
+    -  wget 
+    -  curl 
+    -  libpcre3-dev 
+    -  uuid-dev 
+    -  libmagic-dev 
+    -  pkg-config 
+    -  g++ 
+    -  flex 
+    -  bison 
+    -  zlib1g-dev 
+    -  libffi-dev 
+    -  gettext 
+    -  libgeoip-dev 
+    -  make 
+    -  libjson-perl 
+    -  libbz2-dev 
+    -  libwww-perl 
+    -  libpng-dev 
+    -  xz-utils 
+    -  libffi-dev 
+    -  libssl-dev
+    -  liblua5.2-dev
+    -  libdaq-dev
+before_script:
+- ./easybutton-build.sh
+cache:
+  directories:
+  - thirdparty
+before_cache:
+  - rm -f $HOME/.cache/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
+script:
+  - make
