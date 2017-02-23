@@ -43,6 +43,7 @@
     .filter('extractIPString', () => {
       return (ip) => {
         if (!ip) { return ''; }
+        if (typeof ip === 'string' && ip.indexOf('.') !== -1) { return ip; }
 
         return (ip>>24 & 0xff) + '.' + (ip>>16 & 0xff) +
                 '.' + (ip>>8 & 0xff) + '.' + (ip & 0xff);
@@ -155,6 +156,19 @@
     })
 
     /**
+     * Lowercase filter
+     * Sets every letter to lower case in a string
+     *
+     * @example
+     * '{{someString | capitalize}}'
+     */
+     .filter('lowercase', function() {
+       return function(input) {
+         return input.toLowerCase();
+       };
+     })
+
+    /**
      * Min filter
      * Returns the minimum number in a number array
      *
@@ -177,7 +191,7 @@
       * '{{seconds | 'timezone-date' : 'gmt'}}
       *
       * @param {int} seconds      The time in seconds from epoch
-      * @param {string} timezone  The timezone to use ('gmt' or 'utc')
+      * @param {string} timezone  The timezone to use ('gmt' or 'local')
       */
      .filter('timezone-date', function() {
        return function (seconds, timezone) {

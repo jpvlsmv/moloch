@@ -281,12 +281,13 @@ int moloch_packet_process_tcp(MolochSession_t * const session, MolochPacket_t * 
 
     if (tcphdr->th_flags & TH_PUSH) {
         session->tcpFlagCnt[MOLOCH_TCPFLAG_PSH]++;
+    }
 
-        // If we've seen no SYN_ACK and this is a PSH and no tcpSeq set, then just assume we've missed the syn-ack
-        if (session->haveTcpSession && session->tcpFlagCnt[MOLOCH_TCPFLAG_SYN_ACK] == 0 && session->tcpSeq[packet->direction] == 0) {
-            moloch_session_add_tag(session, "no-syn-ack");
-            session->tcpSeq[packet->direction] = seq;
-        }
+
+    // If we've seen SYN but no SYN_ACK and no tcpSeq set, then just assume we've missed the syn-ack
+    if (session->haveTcpSession && session->tcpFlagCnt[MOLOCH_TCPFLAG_SYN_ACK] == 0 && session->tcpSeq[packet->direction] == 0) {
+        moloch_session_add_tag(session, "no-syn-ack");
+        session->tcpSeq[packet->direction] = seq;
     }
 
     MolochTcpDataHead_t * const tcpData = &session->tcpData;
@@ -855,6 +856,8 @@ gboolean moloch_packet_frags_process(MolochPacket_t * const packet)
     // Now alloc the full packet
     packet->pktlen = packet->payloadOffset + payloadLen;
     uint8_t *pkt = malloc(packet->pktlen);
+
+    // Copy packet header
     memcpy(pkt, packet->pkt, packet->payloadOffset);
 
     // Fix header of new packet
@@ -867,7 +870,10 @@ gboolean moloch_packet_frags_process(MolochPacket_t * const packet)
         struct ip *fip4 = (struct ip*)(fpacket->pkt + fpacket->ipOffset);
         uint16_t fip_off = ntohs(fip4->ip_off) & IP_OFFMASK;
 
-        memcpy(pkt+packet->payloadOffset+(fip_off*8), fpacket->pkt+fpacket->payloadOffset, fpacket->payloadLen);
+        if (packet->payloadOffset+(fip_off*8) + fpacket->payloadLen <= packet->pktlen)
+            memcpy(pkt+packet->payloadOffset+(fip_off*8), fpacket->pkt+fpacket->payloadOffset, fpacket->payloadLen);
+        else
+            LOG("WARNING - Not enough room for frag %d > %d", packet->payloadOffset+(fip_off*8) + fpacket->payloadLen, packet->pktlen);
     }
 
     // Set all the vars in the current packet to new defraged packet
@@ -877,7 +883,7 @@ gboolean moloch_packet_frags_process(MolochPacket_t * const packet)
     packet->copied = 1;
     packet->wasfrag = 1;
     packet->payloadLen = payloadLen;
-    DLL_REMOVE(packet_, &frags->packets, packet); // Remove from list so we don't get freed
+    DLL_REMOVE(packet_, &frags->packets, packet); // Remove from list so we don't get freed in frags_free
     moloch_packet_frags_free(frags);
     return TRUE;
 }
@@ -979,6 +985,7 @@ int moloch_packet_ip(MolochPacketBatch_t *batch, MolochPacket_t * const packet, 
 
     if (batch) {
         DLL_PUSH_TAIL(packet_, &batch->packetQ[thread], packet);
+        batch->count++;
     } else {
         MOLOCH_LOCK(packetQ[thread].lock);
         DLL_PUSH_TAIL(packet_, &packetQ[thread], packet);
@@ -1237,6 +1244,7 @@ void moloch_packet_batch_init(MolochPacketBatch_t *batch)
     for (t = 0; t < config.packetThreads; t++) {
         DLL_INIT(packet_, &batch->packetQ[t]);
     }
+    batch->count = 0;
 }
 /******************************************************************************/
 void moloch_packet_batch_flush(MolochPacketBatch_t *batch)
@@ -1251,6 +1259,7 @@ void moloch_packet_batch_flush(MolochPacketBatch_t *batch)
             MOLOCH_UNLOCK(packetQ[t].lock);
         }
     }
+    batch->count = 0;
 }
 /******************************************************************************/
 void moloch_packet_batch(MolochPacketBatch_t * batch, MolochPacket_t * const packet)

@@ -170,6 +170,17 @@
     });
 
 
+    describe('Lowercase Filter ->', function() {
+
+      it('should return the string with the all letters lowercased', function() {
+        let str     = 'CAPITALIZED string HERE!';
+        let result  = $filter('lowercase')(str);
+        expect(result).toEqual('capitalized string here!');
+      });
+
+    });
+
+
     describe('Min Filter ->', function() {
 
       it('should return the minimum number in an array of numbers', function() {
@@ -195,7 +206,7 @@
 
       it('should return an integer date in the requested timezone', function() {
         let time   = 18000;
-        let result = $filter('timezone-date')(time, 'utc');
+        let result = $filter('timezone-date')(time, 'local');
         expect(result).toEqual(18000000);
 
         result = $filter('timezone-date')(time, 'gmt');

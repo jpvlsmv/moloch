@@ -37,7 +37,7 @@
     get(query) {
       return this.$q((resolve, reject) => {
 
-        let params = {};
+        let params = { flatten: 1 };
 
         if (query) {
           if (query.length)     { params.length = query.length; }
@@ -147,27 +147,63 @@
      * Gets details about the session
      * @param {string} id         The unique id of the session
      * @param {string} node       The node that the session belongs to
+     * @returns {Promise} Promise A promise object that signals the completion
+     *                            or rejection of the request.
+     */
+    getDetail(id, node) {
+      return this.$q((resolve, reject) => {
+
+        let options = {
+          url   : node + '/session/' + id + '/detail',
+          method: 'GET'
+        };
+
+        this.$http(options)
+           .then((response) => {
+             resolve(response);
+           }, (error) => {
+             reject(error);
+           });
+
+      });
+    }
+
+    /**
+     * Gets session packets
+     * @param {string} id         The unique id of the session
+     * @param {string} node       The node that the session belongs to
      * @param {Object} params     The params to send with the request
      * @returns {Promise} Promise A promise object that signals the completion
      *                            or rejection of the request.
      */
-    getDetail(id, node, params) {
-      return this.$q((resolve, reject) => {
+    getPackets(id, node, params) {
+      let deferred = this.$q.defer();
 
-        let options = {
-          url   : node + '/' + id + '/' + 'sessionDetailNew',
-          method: 'GET',
-          params: params
-        };
-
-        this.$http(options)
-          .then((response) => {
-            resolve(response);
-          }, (error) => {
-            reject(error);
-          });
-
+      let request = this.$http({
+        url     : node + '/session/' + id + '/packets',
+        method  : 'GET',
+        params  : params,
+        timeout : deferred.promise
       });
+
+      let promise = request
+         .then((response) => {
+           return(response);
+         }, (error) => {
+           return(this.$q.reject(error));
+         }).catch(angular.noop); // handle abort
+
+      promise.abort = () => {
+        deferred.resolve({error:'Request canceled.'});
+      };
+
+      // cleanup
+      promise.finally(() => {
+        promise.abort = angular.noop;
+        deferred = request = promise = null;
+      });
+
+      return(promise);
     }
 
     /**
@@ -358,7 +394,7 @@
         baseUrl += '&stopTime='   + params.stopTime;
       }
 
-      baseUrl += '&expression=' + params.expression;
+      baseUrl += '&expression=' + encodeURIComponent(params.expression);
 
       return baseUrl;
     }

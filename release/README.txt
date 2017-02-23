@@ -1,6 +1,6 @@
-Instructions for using the prebuilt Moloch packages.  These packages are still 
-in testing phase, so there may be some issues.  Please report and bugs
-or feature requests by opening an issue at https://github.com/aol/moloch/issues
+Instructions for using the prebuilt Moloch packages.
+These packages are still in the testing phase so there may be some issues.  
+Please report and bugs or feature requests by opening an issue at https://github.com/aol/moloch/issues
 
 Basic Moloch Installation steps:
  1) Download a Moloch build for 64bit Ubuntu 14.04, Ubuntu 16.04, Centos 6, or Centos 7 from http://molo.ch/index.html#downloads
@@ -18,7 +18,7 @@ Basic Moloch Installation steps:
   b) If this is an update to moloch package
       /data/moloch/db/db.pl http://ESHOST:9200 upgrade
  6) Add an admin user if a new install or after an init
-      /data/moloch/bin/moloch_add_user.sh admin admin THEPASSWORDGOESHERE --admin
+      /data/moloch/bin/moloch_add_user.sh admin "Admin User" THEPASSWORD --admin
  7) Start everything
    a) If using Centos 6 or Ubuntu 14.02:
       /sbin/start molochcapture
@@ -30,9 +30,10 @@ Basic Moloch Installation steps:
       /data/moloch/logs/viewer.log
       /data/moloch/logs/capture.log
  9) Visit http://molochhost:8005 with your favorite browser.
+      user: admin
+      password: password from step #6
 
 
-Additional information can be found
+Additional information can be found at:
   * https://github.com/aol/moloch/wiki/FAQ
   * https://github.com/aol/moloch/wiki/Settings
-

@@ -59,7 +59,7 @@
         numVisibleSessions  : 100,
         numMatchingSessions : 10,
         start               : 0,
-        timezone            : 'utc'
+        timezone            : 'local'
       });
 
       // spy on functions in controller
@@ -108,7 +108,7 @@
       expect(search.start).toEqual(0);
 
       expect(search.timezone).toBeDefined();
-      expect(search.timezone).toEqual('utc');
+      expect(search.timezone).toEqual('local');
     });
 
     it('should emit a "change:search" event when time range is changed', function() {
@@ -185,12 +185,37 @@
 
       expect(scope.$emit).toHaveBeenCalled();
       expect(scope.$emit).toHaveBeenCalledWith('change:search', {
-        view: 'viewy'
+        expression: null,
+        view      : 'viewy'
       });
 
       expect(rootScope.$broadcast).toHaveBeenCalled();
       expect(rootScope.$broadcast).toHaveBeenCalledWith('issue:search', {
-        view: 'viewy'
+        expression: null,
+        view      : 'viewy'
+      });
+    });
+
+    it('should set a view and expression', function() {
+      let expression = { value: 'protocols == tcp' };
+      let view = 'viewy';
+
+      search.expression = expression;
+      search.setView(view);
+
+      expect(search.view).toEqual(view);
+      expect(sessionStorage['moloch-view']).toEqual(view);
+
+      expect(scope.$emit).toHaveBeenCalled();
+      expect(scope.$emit).toHaveBeenCalledWith('change:search', {
+        expression: expression.value,
+        view      : view
+      });
+
+      expect(rootScope.$broadcast).toHaveBeenCalled();
+      expect(rootScope.$broadcast).toHaveBeenCalledWith('issue:search', {
+        expression: expression.value,
+        view      : view
       });
     });
 
@@ -202,12 +227,14 @@
 
       expect(scope.$emit).toHaveBeenCalled();
       expect(scope.$emit).toHaveBeenCalledWith('change:search', {
-        view: undefined
+        expression: null,
+        view      : undefined
       });
 
       expect(rootScope.$broadcast).toHaveBeenCalled();
       expect(rootScope.$broadcast).toHaveBeenCalledWith('issue:search', {
-        view: undefined
+        expression: null,
+        view      : undefined
       });
     });
 
@@ -239,12 +266,14 @@
 
       expect(scope.$emit).toHaveBeenCalled();
       expect(scope.$emit).toHaveBeenCalledWith('change:search', {
-        view: 'viewy'
+        expression: null,
+        view      : 'viewy'
       });
 
       expect(rootScope.$broadcast).toHaveBeenCalled();
       expect(rootScope.$broadcast).toHaveBeenCalledWith('issue:search', {
-        view: 'viewy'
+        expression: null,
+        view      : 'viewy'
       });
 
       // delete view
@@ -271,12 +300,14 @@
 
       expect(scope.$emit).toHaveBeenCalled();
       expect(scope.$emit).toHaveBeenCalledWith('change:search', {
-        view: undefined
+        expression: null,
+        view      : undefined
       });
 
       expect(rootScope.$broadcast).toHaveBeenCalled();
       expect(rootScope.$broadcast).toHaveBeenCalledWith('issue:search', {
-        view: undefined
+        expression: null,
+        view      : undefined
       });
     });
 
