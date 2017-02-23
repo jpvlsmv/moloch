@@ -47,8 +47,8 @@ addons:
 before_script:
 - gem install fpm
 - mkdir -p $HOME/data/moloch/{etc,bin,logs,raw}
-- sh -c "[ ! -f yara-$YARA.tar.gz ] && wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/yara-project/yara-$YARA.tar.gz"
-- sh -c "[ ! -f yara/libyara/.libs/libyara.a ] && ( tar xfz yara-$YARA.tar.gz ; cd yara-$YARA ; ./configure --enable-static && make )"
+- sh -c "[ ! -f yara-$yara_version.tar.gz ] && wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/yara-project/yara-$yara_version.tar.gz"
+- sh -c "[ ! -f yara/libyara/.libs/libyara.a ] && ( tar xfz yara-$yara_version.tar.gz ; cd yara-$yara_version ; ./configure --enable-static && make )"
 # Until everything is converted, use easybutton.sh
 - ./easybutton-build.sh
 cache:
