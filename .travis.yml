@@ -45,6 +45,7 @@ addons:
     -  libglib2.0-dev
     -  libcurl4-gnutls-dev
     -  libpcap0.8-dev
+    -  awscli
 before_script:
 - gem install fpm
 - mkdir -p $HOME/data/moloch/{etc,bin,logs,raw}
@@ -62,6 +63,7 @@ script:
   - make
   - ./configure --prefix=$HOME/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make install
-after_script:
-  - nm /usr/lib/x86_64-linux-gnu/libpcap.a | grep dlt_to
+after_success:
   - ldd capture/moloch-capture
+  - tar cfz $HOME/moloch.tgz data/moloch
+  - aws s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
