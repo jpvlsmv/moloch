@@ -1079,7 +1079,7 @@ void moloch_db_save_session(MolochSession_t *session, int final)
     }
 
     if (jsonSize < (uint32_t)(BSB_WORK_PTR(jbsb) - startPtr)) {
-        LOG("WARNING - BIGGER then expected json %d %d\n", jsonSize,  (int)(BSB_WORK_PTR(jbsb) - startPtr));
+        LOG("WARNING - %s BIGGER then expected json %d %d\n", id, jsonSize,  (int)(BSB_WORK_PTR(jbsb) - startPtr));
         if (config.debug)
             LOG("Data:\n%.*s\n", (int)(BSB_WORK_PTR(jbsb) - startPtr), startPtr);
     }
@@ -2101,7 +2101,7 @@ void moloch_db_load_fields()
     free(data);
 }
 /******************************************************************************/
-void moloch_db_add_field(char *group, char *kind, char *expression, char *friendlyName, char *dbField, char *help, va_list ap)
+void moloch_db_add_field(char *group, char *kind, char *expression, char *friendlyName, char *dbField, char *help, int haveap, va_list ap)
 {
     char                   key[100];
     int                    key_len;
@@ -2124,7 +2124,7 @@ void moloch_db_add_field(char *group, char *kind, char *expression, char *friend
              dbField,
              kind);
 
-    if (ap) {
+    if (haveap) {
         while (1) {
             field = va_arg(ap, char *);
             if (!field)

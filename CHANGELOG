@@ -1,6 +1,20 @@
+0.17.1 2017/01/30
+  - NOTICE: ES 2.4 or ES 5.1.2 required (ES 5.x isn't recommended for production yet)
+    ES 5 users READ: https://github.com/aol/moloch/wiki/FAQ#how-do-i-upgrade-to-es-5x
+  - NOTICE: Can only update directly from Moloch 0.11.1 or later
+  - capture - handle missing syn/ack better
+  - capture - better mongo detection
+  - db - dstats_2 and stats_v1 now use date for time for kibana support, also prepares for ES 5 upgrade
+  - capture - some arm64 fixes (issue #584)
+  - viewer - new settings page
+  - capture - tpacketv3 no longer requires a bpf
+  - capture - pfring uses batch packet api
+  - capture - fix libpcap multiple interface crash (issue #610)
+
 0.17.0 2017/01/05
   - NOTICE: npm update required
   - NOTICE: ES 2.4.x required
+  - NOTICE: Last version that can be updated directly from Moloch 0.11.0 or earlier
   - viewer - New sessions UI (newUI=true)
   - all - Initial ES 5.0 support (do not use in production!)
   - all - Refactor many ES calls to remove depreciated syntax
@@ -33,6 +47,7 @@
   - capture - new scrubspi plugin
   - viewer - Apply user setting timezone
   - viewer - Add "EXISTS!" to search expression typeahead results
+  - viewer - split session spi data and pcap loading into two apis
 
 0.16.1 2016/11/28
   - NOTICE: db.pl upgrade is required

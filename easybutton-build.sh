@@ -9,11 +9,11 @@
 # * build moloch-capture
 
 
-GLIB=2.47.4
-YARA=1.7
-GEOIP=1.6.0
-PCAP=1.7.4
-CURL=7.42.1
+GLIB=2.47.4  #CONFLICTOR
+YARA=1.7  #CONFLICTOR
+GEOIP=1.6.0  #CONFLICTOR
+PCAP=1.7.4  #CONFLICTOR
+CURL=7.42.1  #CONFLICTOR
 
 TDIR="/data/moloch"
 DOPFRING=0
@@ -160,9 +160,9 @@ fi
 
 
 # Now build moloch
-echo "MOLOCH: Building capture"
-cd ..
-echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
-./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
-
+#echo "MOLOCH: Building capture"
+#cd ..
+#echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
+#./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
+#
 exit 0

@@ -2,7 +2,11 @@
 
   'use strict';
 
-  let optionsHTML = require('html!../templates/session.detail.options.html');
+  const defaultUserSettings = {
+    detailFormat  : 'last',
+    numPackets    : 'last',
+    showTimestamps: 'last'
+  };
 
   /**
    * @class SessionDetailController
@@ -15,20 +19,25 @@
      * Initialize global variables for this controller
      * @param $sce            Angular strict contextual escaping service
      * @param $scope          Angular application model object
+     * @param $sanitize       Sanitizes an html string by stripping all potentially dangerous tokens
      * @param $routeParams    Retrieve the current set of route parameters
      * @param SessionService  Transacts sessions with the server
      * @param ConfigService   Transacts app configurations with the server
      * @param FieldService    Retrieves available fields from the server
+     * @param UserService     Transacts users and user data with the server
      *
      * @ngInject
      */
-    constructor($sce, $scope, $routeParams, SessionService, ConfigService, FieldService) {
+    constructor($sce, $scope, $sanitize, $routeParams,
+                SessionService, ConfigService, FieldService, UserService) {
       this.$sce           = $sce;
       this.$scope         = $scope;
+      this.$sanitize      = $sanitize;
       this.$routeParams   = $routeParams;
       this.SessionService = SessionService;
       this.ConfigService  = ConfigService;
       this.FieldService   = FieldService;
+      this.UserService    = UserService;
     }
 
     /* Callback when component is mounted and ready */
@@ -39,33 +48,30 @@
       // default session detail parameters
       // add to $scope so session.detail.options can use it
       this.$scope.params = {
-        base  : 'hex',
-        line  : false,
-        image : false,
-        gzip  : false,
-        ts    : false,
-        decode: {}
+        base    : 'hex',
+        line    : false,
+        image   : false,
+        gzip    : false,
+        ts      : false,
+        decode  : {},
+        packets : 200
       };
 
-      if (localStorage) { // display browser saved options
-        if (localStorage['moloch-base']) {
-          this.$scope.params.base = localStorage['moloch-base'];
-        }
-        if (localStorage['moloch-ts']) {
-          this.$scope.params.ts = JSON.parse(localStorage['moloch-ts']);
-        }
-        if (localStorage['moloch-line']) {
-          this.$scope.params.line = JSON.parse(localStorage['moloch-line']);
-        }
-        if (localStorage['moloch-gzip']) {
-          this.$scope.params.gzip = JSON.parse(localStorage['moloch-gzip']);
-        }
-        if (localStorage['moloch-image']) {
-          this.$scope.params.image = JSON.parse(localStorage['moloch-image']);
-        }
-      }
+      this.UserService.getSettings()
+        .then((response) => {
+          this.userSettings = response;
 
-      this.getDetailData();
+          this.setParameters();
+          this.getPackets();
+        })
+        .catch((error) => {
+          // can't get user, so use defaults
+          this.userSettings = defaultUserSettings;
+          // but still get the packets
+          this.getPackets();
+        });
+
+      this.getDetailData(); // get SPI data
 
       this.ConfigService.getMolochClickables()
         .then((response) => {
@@ -96,6 +102,37 @@
       });
     }
 
+    /* sets the session detail query parameters based on user settings and
+       browser saved options */
+    setParameters() {
+      if (localStorage) { // display user and browser saved options
+        if (this.userSettings.detailFormat === 'last' && localStorage['moloch-base']) {
+          this.$scope.params.base = localStorage['moloch-base'];
+        } else if (this.userSettings.detailFormat) {
+          this.$scope.params.base = this.userSettings.detailFormat;
+        }
+        if (this.userSettings.numPackets === 'last' && localStorage['moloch-packets']) {
+          this.$scope.params.packets = localStorage['moloch-packets'];
+        } else if (this.userSettings.numPackets) {
+          this.$scope.params.packets = this.userSettings.numPackets;
+        }
+        if (this.userSettings.showTimestamps === 'last' && localStorage['moloch-ts']) {
+          this.$scope.params.ts = localStorage['moloch-ts'] === 'true';
+        } else if (this.userSettings.showTimestamps) {
+          this.$scope.params.ts = this.userSettings.showTimestamps === 'on';
+        }
+        if (localStorage['moloch-line']) {
+          this.$scope.params.line = JSON.parse(localStorage['moloch-line']);
+        }
+        if (localStorage['moloch-gzip']) {
+          this.$scope.params.gzip = JSON.parse(localStorage['moloch-gzip']);
+        }
+        if (localStorage['moloch-image']) {
+          this.$scope.params.image = JSON.parse(localStorage['moloch-image']);
+        }
+      }
+    }
+
 
     /* exposed functions --------------------------------------------------- */
     /**
@@ -103,15 +140,9 @@
      * @param {string} message An optional message to display to the user
      */
     getDetailData(message) {
-      if (localStorage) { // update browser saved options
-        localStorage['moloch-base']   = this.$scope.params.base;
-        localStorage['moloch-line']   = this.$scope.params.line;
-        localStorage['moloch-gzip']   = this.$scope.params.gzip;
-        localStorage['moloch-image']  = this.$scope.params.image;
-      }
+      this.loading = true;
 
-      this.SessionService.getDetail(this.$scope.session.id,
-        this.$scope.session.no, this.$scope.params)
+      this.SessionService.getDetail(this.$scope.session.id, this.$scope.session.no)
         .then((response) => {
           this.loading = false;
           this.$scope.detailHtml = this.$sce.trustAsHtml(response.data);
@@ -126,9 +157,52 @@
         });
     }
 
+    /* Gets the packets for the session from the server */
+    getPackets() {
+      // already loading, don't load again!
+      if (this.loadingPackets) { return; }
+
+      this.loadingPackets = true;
+      this.errorPackets   = false;
+
+      if (localStorage) { // update browser saved options
+        if (this.userSettings.detailFormat === 'last') {
+          localStorage['moloch-base'] = this.$scope.params.base;
+        }
+        if (this.userSettings.numPackets === 'last') {
+          localStorage['moloch-packets'] = this.$scope.params.packets;
+        }
+        localStorage['moloch-line']   = this.$scope.params.line;
+        localStorage['moloch-gzip']   = this.$scope.params.gzip;
+        localStorage['moloch-image']  = this.$scope.params.image;
+      }
+
+      this.packetPromise = this.SessionService.getPackets(this.$scope.session.id,
+         this.$scope.session.no, this.$scope.params);
+
+      this.packetPromise.then((response) => {
+        this.loadingPackets = false;
+        this.packetPromise  = null;
+
+        if (response && response.data) {
+          this.$scope.packetHtml = this.$sce.trustAsHtml(response.data);
+          // remove all un-whitelisted tokens from the html
+          this.$scope.packetHtml = this.$sanitize(this.$scope.packetHtml);
+
+          this.$scope.renderPackets();
+        }
+      })
+      .catch((error) => {
+        this.loadingPackets = false;
+        this.errorPackets   = error;
+        this.packetPromise  = null;
+      });
+    }
+
     /* Toggles the view of packet timestamps */
     toggleTimeStamps() {
-      if (localStorage) { // update browser saved ts
+      if (localStorage && this.userSettings.showTimestamps === 'last') {
+        // update browser saved ts if the user settings is set to lastl
         localStorage['moloch-ts'] = this.$scope.params.ts;
       }
     }
@@ -168,10 +242,17 @@
       this.$scope.$emit('change:time', { start:startTime });
     }
 
+    /* Cancels the packet loading request */
+    cancelPacketLoad() {
+      this.packetPromise.abort();
+      this.packetPromise  = null;
+      this.errorPackets   = 'Request canceled.';
+    }
+
   }
 
-  SessionDetailController.$inject = ['$sce','$scope', '$routeParams',
-    'SessionService','ConfigService','FieldService'];
+  SessionDetailController.$inject = ['$sce','$scope','$sanitize','$routeParams',
+    'SessionService','ConfigService','FieldService','UserService'];
 
 
   angular.module('moloch')
@@ -252,7 +333,9 @@
 
           scope.renderDetail = function() {
             // compile and render the session detail
-            let template = `<div class="detail-container" ng-class="{'show-ts':params.ts === true}">${scope.detailHtml}</div>`;
+            let template = `<div class="detail-container" 
+                              ng-class="{'show-ts':params.ts === true}">
+                                ${scope.detailHtml}</div>`;
             let compiled = $compile(template)(scope);
             element.find('.detail-container').replaceWith(compiled);
 
@@ -266,17 +349,22 @@
                 actionsEl.append(actionsContent);
                 actionsEl.dropdown();
               }
+            });
+          };
+          
+          scope.renderPackets = function() {
+            // render session packets (don't compile!)
+            let template = `<div class="inner">${scope.packetHtml}</div>`;
+            element.find('.packet-container > .inner').replaceWith(template);
 
-              // display packet option buttons
-              let optionsEl   = element.find('.packet-options');
-              let optContent  = $compile(optionsHTML)(scope);
-              optionsEl.replaceWith(optContent);
+            $timeout(function() { // wait until session packets are rendered
+              let i, len, time, value, timeEl;
 
               // modify the packet timestamp values
               let tss = element[0].querySelectorAll('.session-detail-ts');
               for (i = 0, len = tss.length; i < len; ++i) {
                 timeEl  = tss[i];
-                value   = timeEl.getAttribute('ts');
+                value   = timeEl.getAttribute('value');
                 timeEl  = timeEl.querySelectorAll('.ts-value');
                 if (!isNaN(value)) { // only parse value if it's a number (ms from 1970)
                   time = $filter('date')(value, 'yyyy/MM/dd HH:mm:ss.sss');

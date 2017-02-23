@@ -51,7 +51,7 @@
           Delete SPI & PCAP
         </a>
       </li>
-      <li ng-repeat="(key, value) in $ctrl.molochclusters"
+      <li ng-repeat="(key, value) in $ctrl.molochclusters track by key"
         ng-click="$ctrl.sendSession(key)">
         <a>
           <span class="fa fa-fw fa-paper-plane-o"></span>&nbsp;
@@ -86,7 +86,7 @@
         <div><a>None</a></div>
       </li>
       <li role="menuitem" class="cursor-pointer"
-        ng-repeat="(key,val) in $ctrl.views"
+        ng-repeat="(key,val) in $ctrl.views track by key"
         ng-class="{'active':$ctrl.view === key}"
         uib-tooltip="Apply {{::key}} View ({{::val.expression}})"
         tooltip-placement="left">
@@ -165,7 +165,7 @@
         <input type="text" class="form-control date-control"
           uib-datepicker-popup="{{$ctrl.dateTimeFormat}}" epoch-date="{{::$ctrl.timezone}}"
           ng-model="$ctrl.startTime" is-open="$ctrl.startTimePopup.opened"
-          close-text="Close" ng-change="$ctrl.changeDate()"
+          close-text="Close" enter-click="$ctrl.changeDate()"
           ng-model-options="{ debounce: 600 }"
           alt-input-formats="$ctrl.altInputFormats" />
         <div class="input-group-btn">
@@ -190,7 +190,7 @@
         <input type="text" class="form-control date-control"
           uib-datepicker-popup="{{$ctrl.dateTimeFormat}}" epoch-date="{{::$ctrl.timezone}}"
           ng-model="$ctrl.stopTime" is-open="$ctrl.stopTimePopup.opened"
-          close-text="Close" ng-change="$ctrl.changeDate()"
+          close-text="Close" enter-click="$ctrl.changeDate()"
           ng-model-options="{ debounce: 600 }"
           alt-input-formats="$ctrl.altInputFormats" />
         <div class="input-group-btn">

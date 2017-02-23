@@ -34,20 +34,21 @@
 
     /* Callback when component is mounted and ready */
     $onInit() {
-      // only display fields that have a value
-      if (this.value === undefined && (!this.field || !this.field.children)) { return; }
+      // exit out asap: only display fields that have a value or children
+      if ((this.value === undefined || this.value === '') &&
+         (!this.field || !this.field.children)) { return; }
 
+      // setup parse flag
       if (typeof this.parse === 'string') {
         this.parse = this.parse === 'true';
       }
 
+      // setup stringify flag
       if (typeof this.stringify === 'string') {
         this.stringify = this.stringify === 'true';
       }
 
-      // for values required to be strings in the search expression
-      if (this.stringify) { this.stringVal = '\"' + this.value + '\"'; }
-
+      // only parse values if we know how to (requires field param)
       if (this.field) { this.parseValue(this.field); }
 
       // TODO: only get moloch fields if user opens drop down OR if field is not passed into component
@@ -86,6 +87,9 @@
      * @param {string} op     The relational operator
      */
     fieldClick(field, value, op) {
+      // for values required to be strings in the search expression
+      if (this.stringify) { value = '\"' + this.value + '\"'; }
+
       let fullExpression = `${field} ${op} ${value}`;
 
       this.$scope.$emit('add:to:search', { expression: fullExpression });
@@ -133,41 +137,69 @@
     parseValue(fieldObj) {
       this.fieldObj = fieldObj;
 
-      this.parsed   = this.value;
+      // TODO: this goes away with ES5
+      if (this.session && this.fieldObj.dbField === 'a1' && this.session['tipv61-term']) {
+        this.expr     = 'tipv6.src';
+        this.fieldObj = {dbField:'tipv61-term',exp:'tipv6.src',friendlyName:'IPv6 Src',group:'general',help:'Temporary IPv6 Source',portField:'p1',transform:'ipv6ToHex',type:'lotermfield'};
+        this.value    = this.session['tipv61-term'];
+      } else if (this.session && this.fieldObj.dbField === 'a2' && this.session['tipv62-term']) {
+        this.expr     = 'tipv6.dst';
+        this.fieldObj = {dbField:'tipv62-term',exp:'tipv6.dst',friendlyName:'IPv6 Dst',group:'general',help:'Temporary IPv6 Destination',portField:'p2',transform:'ipv6ToHex',type:'lotermfield'};
+        this.value    = this.session['tipv62-term'];
+      }
 
-      if (!this.fieldObj || !this.parse) { return; }
+      this.parsed = {
+        queryVal: this.value,
+        value   : this.value
+      };
 
-      switch(this.fieldObj.type) {
-        case 'seconds':
-          this.time   = true;
-          this.value  = this.parsed;
-          this.parsed = this.$filter('timezone-date')(this.parsed, this.timezone);
-          let dateFormat = 'yyyy/MM/dd HH:mm:ss';
-          if (this.timezone === 'gmt') { dateFormat = 'yyyy/MM/dd HH:mm:ss\'Z\''; }
-          this.parsed = this.$filter('date')(this.parsed, dateFormat);
-          break;
-        case 'ip':
-          this.parsed = this.$filter('extractIPString')(this.parsed);
-          this.value  = this.parsed;
-          break;
-        case 'lotermfield':
-          if (this.fieldObj.dbField === 'tipv61-term' || this.fieldObj.dbField === 'tipv62-term') {
-            this.parsed = this.$filter('extractIPv6String')(this.parsed);
-            this.value  = this.parsed;
-          }
-          break;
-        case 'termfield':
-          if (this.fieldObj.dbField === 'prot-term') {
-            this.parsed = this.$filter('protocol')(this.parsed);
-            this.value  = this.parsed;
-          }
-          break;
-        case 'integer':
-          if (this.fieldObj.category !== 'port') {
-            this.value  = this.parsed;
-            this.parsed = this.$filter('number')(this.parsed, 0);
-          }
-          break;
+      // the parsed value is always an array
+      if (!Array.isArray(this.value)) { this.parsed = [this.parsed]; }
+
+      if (!this.fieldObj || !this.value) { return; }
+
+      for (let i = 0, len = this.parsed.length; i < len; ++i) {
+        let val   = this.parsed[i].value;
+        let qVal  = this.parsed[i].queryVal;
+
+        switch (this.fieldObj.type) {
+          case 'seconds':
+            this.time = true;
+            qVal  = val; // save original value as the query value
+            val   = this.$filter('timezone-date')(val, this.timezone);
+            let dateFormat = 'yyyy/MM/dd HH:mm:ss';
+            if (this.timezone === 'gmt') {
+              dateFormat = 'yyyy/MM/dd HH:mm:ss\'Z\'';
+            }
+            val = this.$filter('date')(val, dateFormat);
+            break;
+          case 'ip':
+            val   = this.$filter('extractIPString')(val);
+            qVal  = val; // save the parsed value as the query value
+            break;
+          case 'lotermfield':
+            if (this.fieldObj.dbField === 'tipv61-term' ||
+                this.fieldObj.dbField === 'tipv62-term') {
+              val   = this.$filter('extractIPv6String')(val);
+              qVal  = val; // don't save original value
+            }
+            break;
+          case 'termfield':
+            if (this.fieldObj.dbField === 'prot-term') {
+              val   = this.$filter('protocol')(val);
+              qVal  = val; // save the parsed value as the query value
+            }
+            break;
+          case 'integer':
+            if (this.fieldObj.category !== 'port') {
+              qVal  = val; // save original value as the query value
+              val   = this.$filter('number')(val, 0);
+            }
+            break;
+        }
+
+        this.parsed[i].value    = val;  // update parsed value in array
+        this.parsed[i].queryVal = qVal; // update query value in array
       }
     }
 
@@ -263,14 +295,37 @@
       template  : require('html!../templates/session.field.html'),
       controller: SessionFieldController,
       bindings  : {
-        expr      : '<',  // the query expression to be put in the search
-        value     : '<',  // the value of the session field
-        session   : '<',  // the session (required for custom columns)
-        field     : '<',  // the column the field belongs to (for table)
-        parse     : '<',  // whether to parse the value
-        stringify : '<',  // whether to stringify the value in the search expression
-        pullLeft  : '<',  // whether the dropdown should drop down from the left (default is right)
-        timezone  : '<'   // what timezone date fields should be in ('gmt' or 'utc')
+        // the session object
+        // [required for fields with children]
+        session   : '<',
+
+        // the field object that describes the field (for table)
+        // [required for fields in table]
+        field     : '<',
+
+        // the query expression to be put in the search
+        // [required]
+        expr      : '@',
+
+        // the value of the session field or undefined if field has children
+        // [required for fields without children]
+        value     : '@',
+
+        // whether to parse the value
+        // [optional, default is false]
+        parse     : '@',
+
+        // whether to stringify the value in the search expression
+        // [optional, default is false]
+        stringify : '@',
+
+        //  whether the dropdown should drop down from the left
+        // [optional, default is false]
+        pullLeft  : '@',
+
+        // what timezone date fields should be in ('gmt' or 'local')
+        // [required for time values]
+        timezone  : '@'
       }
     });
 
