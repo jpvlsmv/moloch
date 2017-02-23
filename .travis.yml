@@ -44,6 +44,7 @@ addons:
     -  libdaq-dev
     -  libglib2.0-dev
     -  libcurl4-gnutls-dev
+    -  libpcap0.8-dev
 before_script:
 - gem install fpm
 - mkdir -p $HOME/data/moloch/{etc,bin,logs,raw}
