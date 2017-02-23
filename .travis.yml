@@ -60,3 +60,5 @@ before_cache:
 script:
   - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make
+  - ./configure --prefix=$HOME/data/moloch
+  - make install

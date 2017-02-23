@@ -160,9 +160,9 @@ fi
 
 
 # Now build moloch
-echo "MOLOCH: Building capture"
-cd ..
-echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
-./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
-
+#echo "MOLOCH: Building capture"
+#cd ..
+#echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
+#./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
+#
 exit 0
