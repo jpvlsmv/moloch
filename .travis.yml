@@ -43,6 +43,7 @@ addons:
     -  liblua5.2-dev
     -  libdaq-dev
     -  libglib2-dev
+    -  libcurl-dev
 before_script:
 - gem install fpm
 - mkdir -p $HOME/data/moloch/{etc,bin,logs,raw}
@@ -56,4 +57,5 @@ cache:
 before_cache:
   - cp /dev/null $HOME/build/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
 script:
+  - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make
