@@ -51,6 +51,6 @@ cache:
   directories:
   - thirdparty
 before_cache:
-  - rm -f $HOME/.cache/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
+  - cp /dev/null $HOME/build/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
 script:
   - make
