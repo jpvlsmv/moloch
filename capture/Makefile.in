@@ -13,7 +13,7 @@ INCLUDE_OTHER = -Ithirdparty \
 	        @CURL_CFLAGS@
 
 
-LIB_PCAP      = @PCAP_LIBS@
+LIB_PCAP      = -Wl,-Bstatic @PCAP_LIBS@ -Wl,-Bdynamic
 LIB_SNF       = /opt/snf/lib/*.so
 LIB_OTHER     = @GLIB2_LIBS@ \
 	        @YARA_LIBS@ \
