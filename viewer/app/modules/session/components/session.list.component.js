@@ -14,6 +14,8 @@
     visibleHeaders: ['fp', 'lp', 'src', 'p1', 'dst', 'p2', 'pa', 'dbby', 'no', 'info']
   };
 
+  const defaultSettings = { timezone: 'local' };
+
   let customCols = require('json!./custom.columns.json');
 
   let holdingClick = false, timeout;
@@ -131,8 +133,10 @@
       this.error    = false;
 
       this.stickySessions = []; // clear sticky sessions
+
+      // TODO: tipv6*-term goes away with ES5
       // clear fields to query for but always include protocols field
-      this.query.fields   = ['pr'];
+      this.query.fields   = ['pr','tipv61-term','tipv62-term'];
 
       // set the fields to retrieve from the server for each session
       if (this.headers) {
@@ -140,9 +144,8 @@
           let field = this.headers[i];
           if (field.children) {
             for (let j = 0; j < field.children.length; ++j) {
-              if (field.children[j]) {
-                this.query.fields.push(field.children[j].dbField);
-              }
+              let child = field.children[j];
+              if (child) { this.query.fields.push(child.dbField); }
             }
           } else {
             this.query.fields.push(field.dbField);
@@ -174,10 +177,15 @@
     getUserSettings() {
       this.UserService.getSettings()
          .then((settings) => {
-           this.settings = settings || {};
+           this.settings = settings;
+           // if the settings are empty, set smart default
+           if (Object.keys(this.settings).length === 0) {
+             this.settings = defaultSettings;
+           }
          })
          .catch((error) => {
-           this.error = error;
+           this.error     = error;
+           this.settings  = defaultSettings;
          });
     }
 

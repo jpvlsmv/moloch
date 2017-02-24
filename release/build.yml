@@ -5,21 +5,21 @@
   become: true
   become_method: sudo
   vars:
-    - yara_version: 1.7
-    - geoip_version: 1.6.9
-    - pcap_version: 1.8.1
-    - curl_version: 7.52.1
-    - glib2_dir: "2.50"
-    - glib2_version: 2.50.2
-    - node_version: 4.6.2
-    - daq_version: 2.0.6
-    - lua_version: 5.3.3
-    - rvm1_rubies:
-      - ruby-1.9.3
-    - moloch_name: moloch
-    - fpm_url: "http://molo.ch"
-    - fpm_description: "Moloch Full Packet System"
-    - iteration: 1
+    - yara_version: 1.7  # CONFLICTOR
+    - geoip_version: 1.6.9  # CONFLICTOR
+    - pcap_version: 1.8.1  # CONFLICTOR
+    - curl_version: 7.52.1  # CONFLICTOR
+    - glib2_dir: "2.50"  # CONFLICTOR
+    - glib2_version: 2.50.2  # CONFLICTOR
+    - node_version: 4.6.2  # CONFLICTOR
+    - daq_version: 2.0.6  # CONFLICTOR
+    - lua_version: 5.3.3  # CONFLICTOR
+    - rvm1_rubies:  # CONFLICTOR
+      - ruby-1.9.3  # CONFLICTOR
+    - moloch_name: moloch  # CONFLICTOR
+    - fpm_url: "http://molo.ch"  # CONFLICTOR
+    - fpm_description: "Moloch Full Packet System"  # CONFLICTOR
+    - iteration: 1  # CONFLICTOR
 
 # Tasks before roles install software
   pre_tasks:
@@ -199,7 +199,7 @@
       register: st
 
     - name: Build daq
-      shell: cd daq-{{daq_version}}; ./configure --with-libpcap-includes=/home/vagrant/libpcap-1.7.4/ --with-libpcap-libraries=/home/vagrant/libpcap-1.7.4; make; make install
+      shell: cd daq-{{daq_version}}; ./configure --with-libpcap-includes=/home/vagrant/libpcap-{{pcap_version}}/ --with-libpcap-libraries=/home/vagrant/libpcap-{{pcap_version}}; make; make install
       when: st.stat.exists == False
 
     - name: Check lua

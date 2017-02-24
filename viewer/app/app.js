@@ -8,6 +8,7 @@
   require('angular-filter');
   require('angular-animate');
   require('angular-resource');
+  require('angular-sanitize');
   require('angular-ui-bootstrap');
   require('ngdraggable');
   require('bootstrap/js/tooltip');
@@ -26,7 +27,7 @@
   angular.module('moloch', [
     // angular dependencies
     'ngResource', 'ngRoute', 'ui.bootstrap', 'ngAnimate',
-    'angular.filter', 'ngDraggable',
+    'angular.filter', 'ngDraggable', 'ngSanitize',
 
     // custom directives
     'directives.navbar', 'directives.footer',
@@ -44,7 +45,9 @@
   .factory('myHttpInterceptor', ['$q', function($q) {
     return {
       'responseError': function(rejection) {
-        if (rejection.status === -1) { rejection = 'Cannot connect to server.'; }
+        if (rejection.status === -1) {
+          rejection = 'Cannot connect to server: request timed out or canceled.';
+        }
         return $q.reject(rejection);
       }
     };
@@ -61,6 +64,10 @@
         .when('/help', {
           title    : 'Help',
           template : '<moloch-help></moloch-help>'
+        })
+        .when('/settings', {
+          title    : 'Settings',
+          template : '<moloch-settings></moloch-settings>'
         })
         // default route is the sessions page
         .otherwise({ redirectTo: '/app' });

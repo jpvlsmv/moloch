@@ -1,43 +1,42 @@
 <!-- normal field with a single value -->
-<span ng-if="::!$ctrl.fieldObj.children && $ctrl.value !== undefined">
-  <!-- search expression -->
+<span ng-if="::!$ctrl.fieldObj.children && $ctrl.parsed !== undefined"
+  ng-repeat="parsed in ::$ctrl.parsed track by $index">
   <span uib-dropdown on-toggle="toggled(open)" class="field" ng-if="::!$ctrl.time">
     <a href id="simple-dropdown" uib-dropdown-toggle>
-      <span class="all-copy">{{::$ctrl.parsed}}</span><span class="fa fa-caret-down"></span>
+      <span class="all-copy">{{::parsed.value}}</span><span class="fa fa-caret-down"></span>
     </a>
     <ul class="dropdown-menu" uib-dropdown-menu
       ng-class="{'pull-left':$ctrl.pullLeft, 'pull-right':!$ctrl.pullLeft}">
       <div>
-        <li ng-click="$ctrl.fieldClick($ctrl.expr, $ctrl.stringVal || $ctrl.value, '==')">
+        <li ng-click="$ctrl.fieldClick($ctrl.expr, parsed.queryVal, '==')">
           <a href>
             <strong>and</strong>
-            {{::$ctrl.parsed}}
+            {{::parsed.value}}
           </a>
         </li>
-        <li ng-click="$ctrl.fieldClick($ctrl.expr, $ctrl.stringVal || $ctrl.value, '!=')">
+        <li ng-click="$ctrl.fieldClick($ctrl.expr, parsed.queryVal, '!=')">
           <a href>
             <strong>and not</strong>
-            {{::$ctrl.parsed}}
+            {{::parsed.value}}
           </a>
         </li>
       </div>
-      <div ng-if="::$ctrl.fieldObj.portField && $ctrl.session[$ctrl.fieldObj.portField]">
-        <li ng-click="$ctrl.fieldClick($ctrl.expr, ($ctrl.stringVal || $ctrl.value) + ':' + $ctrl.session[$ctrl.fieldObj.portField], '==')">
+      <div ng-if="::$ctrl.fieldObj.portField && $ctrl.session[$ctrl.fieldObj.portField] !== undefined">
+        <li ng-click="$ctrl.fieldClick($ctrl.expr, parsed.queryVal + ':' + $ctrl.session[$ctrl.fieldObj.portField], '==')">
           <a href>
             <strong>and</strong>
-            {{::$ctrl.parsed}}:{{$ctrl.session[$ctrl.fieldObj.portField]}}
+            {{::parsed.value}}:{{$ctrl.session[$ctrl.fieldObj.portField]}}
           </a>
         </li>
-        <li ng-if="::$ctrl.fieldObj.portField && $ctrl.session[$ctrl.fieldObj.portField]"
-          ng-click="$ctrl.fieldClick($ctrl.expr, ($ctrl.stringVal || $ctrl.value) + ':' + $ctrl.session[$ctrl.fieldObj.portField], '!=')">
+        <li ng-click="$ctrl.fieldClick($ctrl.expr, parsed.queryVal + ':' + $ctrl.session[$ctrl.fieldObj.portField], '!=')">
           <a href>
             <strong>and not</strong>
-            {{::$ctrl.parsed}}:{{$ctrl.session[$ctrl.fieldObj.portField]}}
+            {{::parsed.value}}:{{$ctrl.session[$ctrl.fieldObj.portField]}}
           </a>
         </li>
       </div>
       <div>
-        <li ng-repeat="item in ::$ctrl.menuItems">
+        <li ng-repeat="item in ::$ctrl.menuItems track by $index">
           <a href="{{::item.url}}" target="_blank">
             <strong>{{::item.name}}</strong> {{::item.value}}
           </a>
@@ -47,9 +46,9 @@
   </span>
   <!-- time constraint -->
   <span ng-if="::$ctrl.time" class="field cursor-pointer"
-    ng-click="$ctrl.timeClick($ctrl.expr, $ctrl.value)"
+    ng-click="$ctrl.timeClick($ctrl.expr, parsed.queryVal)"
     uib-tooltip="Click to apply time constraint">
-    <a>{{::$ctrl.parsed}}</a>
+    <a>{{::parsed.value}}</a>
   </span>
 </span>
 
@@ -61,9 +60,9 @@
 <!-- special column (with multiple fields to display) -->
 <span ng-if="::$ctrl.session && $ctrl.fieldObj.children && $ctrl.fieldObj.dbField !== 'info'">
   <!-- recurse on child fields -->
-  <div class="field-children" ng-repeat="child in ::$ctrl.fieldObj.children">
-    <session-field field="child" expr="child.exp"
-      value="$ctrl.session[child.dbField]" parse="$ctrl.parse"
-      session="$ctrl.session" timezone="$ctrl.timezone"></session-field>
+  <div class="field-children" ng-repeat="child in ::$ctrl.fieldObj.children track by $index">
+    <session-field field="child" expr="{{::child.exp}}" stringify="{{::$ctrl.stringify}}"
+      value="{{::$ctrl.session[child.dbField]}}" parse="{{::$ctrl.parse}}"
+      session="$ctrl.session" timezone="{{::$ctrl.timezone}}"></session-field>
   </div>
 </span>
