@@ -65,5 +65,5 @@ script:
   - make install
 after_success:
   - ldd capture/moloch-capture
-  - tar -C $HOME cfz $HOME/moloch.tgz data
+  - tar cfz $HOME/moloch.tgz -C $HOME data
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
