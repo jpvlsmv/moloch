@@ -28,6 +28,7 @@ addons:
     -  g++
     -  flex
     -  bison
+    -  automake
     -  zlib1g-dev
     -  libffi-dev
     -  gettext
