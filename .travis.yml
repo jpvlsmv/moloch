@@ -60,7 +60,7 @@ before_cache:
   - cp /dev/null $HOME/build/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
 script:
   - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
-  - make
+  - make CFLAGS=-pg
   - ./configure --prefix=$HOME/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make install
 after_success:
