@@ -17,6 +17,7 @@ env:
   - fpm_description= "Moloch Full Packet System"
   - iteration= 1
 addons:
+  artifacts: true
   apt:
     packages:
     -  wget
@@ -71,5 +72,3 @@ after_success:
   - aws --region=us-east-1 s3 cp /tmp/moloch*.deb s3://content.iegrec.org/moloch/
   - tar cfz $HOME/moloch.tgz -C $HOME data
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
-addons:
-  artifacts: true
