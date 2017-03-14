@@ -17,28 +17,30 @@ env:
   - fpm_description= "Moloch Full Packet System"
   - iteration= 1
 addons:
+  artifacts: true
   apt:
     packages:
-    -  wget 
-    -  curl 
-    -  libpcre3-dev 
-    -  uuid-dev 
-    -  libmagic-dev 
-    -  pkg-config 
-    -  g++ 
-    -  flex 
-    -  bison 
-    -  zlib1g-dev 
-    -  libffi-dev 
-    -  gettext 
-    -  libgeoip-dev 
-    -  make 
-    -  libjson-perl 
-    -  libbz2-dev 
-    -  libwww-perl 
-    -  libpng-dev 
-    -  xz-utils 
-    -  libffi-dev 
+    -  wget
+    -  curl
+    -  libpcre3-dev
+    -  uuid-dev
+    -  libmagic-dev
+    -  pkg-config
+    -  g++
+    -  flex
+    -  bison
+    -  automake
+    -  zlib1g-dev
+    -  libffi-dev
+    -  gettext
+    -  libgeoip-dev
+    -  make
+    -  libjson-perl
+    -  libbz2-dev
+    -  libwww-perl
+    -  libpng-dev
+    -  xz-utils
+    -  libffi-dev
     -  libssl-dev
     -  liblua5.2-dev
     -  libdaq-dev
@@ -60,10 +62,13 @@ before_cache:
   - cp /dev/null $HOME/build/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
 script:
   - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
-  - make
+  - make CFLAGS=-pg
   - ./configure --prefix=$HOME/data/moloch --with-yara=thirdparty/yara-$yara_version
   - make install
 after_success:
   - ldd capture/moloch-capture
+  - fpm --verbose -s dir -t deb -n moloch -v v0.17.1+JM --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d libwww-perl -d libjson-perl -d ethtool -C $HOME data/moloch
+#  - find / -xdev -name '*.deb' -ls
+  - aws --region=us-east-1 s3 cp ~/build/jpvlamv/moloch/moloch*.deb s3://content.iegrec.org/moloch/
   - tar cfz $HOME/moloch.tgz -C $HOME data
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
