@@ -67,6 +67,10 @@ script:
 after_success:
   - ldd capture/moloch-capture
   - fpm --verbose -s dir -t deb -n moloch -v v0.17.1+JM --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d libwww-perl -d libjson-perl -d ethtool -C $HOME data/moloch
+  - find / -xdev -name '*.deb' -ls
   - aws --region=us-east-1 s3 cp /tmp/moloch*.deb s3://content.iegrec.org/moloch/
   - tar cfz $HOME/moloch.tgz -C $HOME data
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
+addons:
+  artifacts: true
+    s3_region: "us-east-1"
