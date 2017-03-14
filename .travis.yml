@@ -73,4 +73,3 @@ after_success:
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
 addons:
   artifacts: true
-    s3_region: "us-east-1"
