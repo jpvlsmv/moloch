@@ -75,7 +75,7 @@ fi
 cd thirdparty
 
 # glib
-if [ $(uname) == "FreeBSD" ]; then
+if [ "$(uname)" == "FreeBSD" ]; then
   #Screw it, use whatever the OS has
   WITHGLIB=" "
 else

@@ -1,0 +1,74 @@
+language: C
+dist: "trusty"
+branches:
+  only:
+  - /autobuild-.*/
+env:
+  global:
+  - yara_version=1.7
+  - geoip_version=1.6.9
+  - pcap_version=1.8.1
+  - curl_version=7.52.1
+  - node_version=4.6.2
+  - daq_version=2.0.6
+  - lua_version=5.3.3
+  - moloch_name= moloch
+  - fpm_url="https://github.com/jpvlsmv/moloch"
+  - fpm_description= "Moloch Full Packet System"
+  - iteration= 1
+addons:
+  artifacts: true
+  apt:
+    packages:
+    -  wget
+    -  curl
+    -  libpcre3-dev
+    -  uuid-dev
+    -  libmagic-dev
+    -  pkg-config
+    -  g++
+    -  flex
+    -  bison
+    -  automake
+    -  zlib1g-dev
+    -  libffi-dev
+    -  gettext
+    -  libgeoip-dev
+    -  make
+    -  libjson-perl
+    -  libbz2-dev
+    -  libwww-perl
+    -  libpng-dev
+    -  xz-utils
+    -  libffi-dev
+    -  libssl-dev
+    -  liblua5.2-dev
+    -  libdaq-dev
+    -  libglib2.0-dev
+    -  libcurl4-gnutls-dev
+    -  libpcap0.8-dev
+    -  awscli
+before_script:
+- gem install fpm
+- mkdir -p $HOME/data/moloch/{etc,bin,logs,raw}
+- sh -c "cd thirdparty ; [ ! -f yara-$yara_version.tar.gz ] && wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/yara-project/yara-$yara_version.tar.gz || :"
+- sh -c "cd thirdparty ; [ ! -f yara-$yara_version/libyara/.libs/libyara.a ] && ( tar xfz yara-$yara_version.tar.gz ; cd yara-$yara_version ; ./configure --enable-static && make ) || :"
+# Until everything is converted, use easybutton.sh
+- ./easybutton-build.sh
+cache:
+  directories:
+  - thirdparty
+before_cache:
+  - cp /dev/null $HOME/build/jpvlsmv/moloch/thirdparty/libpcap-1.7.4/config.log
+script:
+  - ./configure --prefix=/data/moloch --with-yara=thirdparty/yara-$yara_version
+  - make CFLAGS=-pg
+  - ./configure --prefix=$HOME/data/moloch --with-yara=thirdparty/yara-$yara_version
+  - make install
+after_success:
+  - ldd capture/moloch-capture
+  - fpm --verbose -s dir -t deb -n moloch -v v0.17.1+JM --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d libwww-perl -d libjson-perl -d ethtool -C $HOME data/moloch
+#  - find / -xdev -name '*.deb' -ls
+  - aws --region=us-east-1 s3 cp ~/build/jpvlsmv/moloch/moloch*.deb s3://content.iegrec.org/moloch/
+  - tar cfz $HOME/moloch.tgz -C $HOME data
+  - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
