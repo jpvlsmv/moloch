@@ -54,7 +54,7 @@ fi
 
 if [ -f "/etc/debian_version" ]; then
   DEPS="wget curl libpcre3-dev uuid-dev libmagic-dev pkg-config g++
-        flex bison zlib1g-dev libffi-dev gettext libgeoip-dev make
+        flex bison zlib1g-dev gettext libgeoip-dev make
         libjson-perl libbz2-dev libwww-perl libpng-dev xz-utils
         libffi-dev libssl-dev"
 
