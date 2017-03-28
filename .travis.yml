@@ -16,6 +16,7 @@ env:
   - fpm_url="https://github.com/jpvlsmv/moloch"
   - fpm_description= "Moloch Full Packet System"
   - iteration= 1
+  - git_rev=$(git describe --all HEAD^ | tr / _)
 addons:
   artifacts: true
   apt:
@@ -67,8 +68,9 @@ script:
   - make install
 after_success:
   - ldd capture/moloch-capture
-  - fpm --verbose -s dir -t deb -n moloch -v v0.17.1+JM --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d libwww-perl -d libjson-perl -d ethtool -C $HOME data/moloch
-#  - find / -xdev -name '*.deb' -ls
+  - fpm -s dir -t deb -n moloch -v {{git_rev}} --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d libwww-perl -d libjson-perl -d ethtool -C $HOME data/moloch
   - aws --region=us-east-1 s3 cp ~/build/jpvlsmv/moloch/moloch*.deb s3://content.iegrec.org/moloch/
+  - fpm -s dir -t rpm -n moloch -v {{git_rev}} --template-scripts --after-install "release/afterinstall.sh" --url "https://github.com/jpvlsmv/moloch" --description "Moloch full capture JFM" -d perl-libwww-perl -d perl-JSON -d ethtool -C $HOME data/moloch
+  - aws --region=us-east-1 s3 cp ~/build/jpvlsmv/moloch/moloch*.rpm s3://content.iegrec.org/moloch/
   - tar cfz $HOME/moloch.tgz -C $HOME data
   - aws --region=us-east-1 s3 cp $HOME/moloch.tgz s3://content.iegrec.org/moloch/build.tgz
