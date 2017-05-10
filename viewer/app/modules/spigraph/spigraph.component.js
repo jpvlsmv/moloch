@@ -115,6 +115,9 @@
         this.openMaps = false;
         this.$scope.$broadcast('close:map');
       });
+      this.$scope.$on('toggle:src:dst', (event, state) => {
+        this.$scope.$broadcast('update:src:dst', state);
+      });
     }
 
     loadData(reload) {
@@ -146,7 +149,7 @@
         })
         .catch((error) => {
           this.loading  = false;
-          this.error    = error;
+          this.error    = error.text;
         });
     }
 
@@ -203,6 +206,18 @@
       let fullExpression = `${field.exp} == ${item.name}`;
 
       this.$scope.$broadcast('add:to:typeahead', { expression: fullExpression});
+    }
+
+    /**
+     * Displays the field.exp instead of field.dbField in the field typeahead
+     * @param {string} value The dbField of the field
+     */
+    formatField(value) {
+      for (let i = 0, len = this.fields.length; i < len; i++) {
+        if (value === this.fields[i].dbField) {
+          return this.fields[i].exp;
+        }
+      }
     }
   }
 

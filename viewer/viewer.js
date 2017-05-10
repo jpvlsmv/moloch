@@ -447,7 +447,7 @@ function createSessionDetailNew() {
       internals.sessionDetailNew += found[k];
     });
 
-    internals.sessionDetailNew = internals.sessionDetailNew.replace(/div.sessionDetailMeta.bold/g, "h4")
+    internals.sessionDetailNew = internals.sessionDetailNew.replace(/div.sessionDetailMeta.bold/g, "h4.sessionDetailMeta")
                                                            .replace(/dl.sessionDetailMeta/g, "dl")
                                                            .replace(/a.moloch-right-click.*molochexpr='([^']+)'.*#{(.*)}/g, "+clickableValue('$1', $2)")
                                                            ;
@@ -825,6 +825,22 @@ app.get('/about', checkWebEnabled, function(req, res) {
 });
 
 app.get('/molochclusters', function(req, res) {
+  function cloneClusters(clusters) {
+    var clone = {};
+
+    for (var key in app.locals.molochClusters) {
+      if (app.locals.molochClusters.hasOwnProperty(key)) {
+        var cluster = app.locals.molochClusters[key];
+        clone[key] = {
+          name: cluster.name,
+          url : cluster.url
+        };
+      }
+    }
+
+    return clone;
+  }
+
   if(!app.locals.molochClusters) {
     var molochClusters = Config.configMap("moloch-clusters");
 
@@ -833,10 +849,14 @@ app.get('/molochclusters', function(req, res) {
       return res.send('Cannot locate right clicks');
     }
 
-    return res.send(molochClusters);
+    var clustersClone = cloneClusters(molochClusters);
+
+    return res.send(clustersClone);
   }
 
-  return res.send(app.locals.molochClusters);
+  var clustersClone = cloneClusters(app.locals.molochClusters);
+
+  return res.send(clustersClone);
 });
 
 app.get('/stats.old', checkWebEnabled, function(req, res) {
@@ -892,7 +912,10 @@ app.get(['/sessions', '/help', '/settings', '/files', '/stats', '/spiview', '/sp
      { path: app.locals.basePath }
   );
 
-  res.render('app.pug');
+  var theme = req.user.settings.theme || 'default-theme';
+  if (theme.startsWith('custom1')) { theme  = 'custom-theme'; }
+
+  res.render('app.pug', { theme:theme });
 });
 
 app.get(['/users'], checkWebEnabled, function(req, res) {
@@ -907,7 +930,10 @@ app.get(['/users'], checkWebEnabled, function(req, res) {
      { path: app.locals.basePath }
   );
 
-  res.render('app.pug');
+  var theme = req.user.settings.theme || 'default-theme';
+  if (theme.startsWith('custom1')) { theme = 'custom-theme'; }
+
+  res.render('app.pug', { theme:theme });
 });
 
 // angular app bundles
@@ -926,6 +952,56 @@ app.get('/vendor.bundle.js.map', function(req, res) {
   res.sendFile(__dirname + '/bundle/vendor.bundle.js.map');
 });
 
+// custom user css
+app.get('/user.css', function(req, res) {
+  fs.readFile("./views/user.styl", 'utf8', function(err, str) {
+    if (err) { return console.log("ERROR - ", err); }
+    if (!req.user.settings.theme) {
+      return console.log("ERROR - no custom theme defined");
+    }
+
+    var style = stylus(str);
+
+    var colors = req.user.settings.theme.split(':')[1].split(',');
+
+    style.define('colorBackground', new stylus.nodes.Literal(colors[0]));
+    style.define('colorForeground', new stylus.nodes.Literal(colors[1]));
+    style.define('colorForegroundAccent', new stylus.nodes.Literal(colors[2]));
+
+    style.define('colorWhite', new stylus.nodes.Literal('#FFFFFF'));
+    style.define('colorBlack', new stylus.nodes.Literal('#333333'));
+    style.define('colorGray', new stylus.nodes.Literal('#CCCCCC'));
+    style.define('colorGrayDark', new stylus.nodes.Literal('#777777'));
+    style.define('colorGrayDarker', new stylus.nodes.Literal('#555555'));
+    style.define('colorGrayLight', new stylus.nodes.Literal('#EEEEEE'));
+    style.define('colorGrayLighter', new stylus.nodes.Literal('#F6F6F6'));
+
+    style.define('colorPrimary', new stylus.nodes.Literal(colors[3]));
+    style.define('colorPrimaryLightest', new stylus.nodes.Literal(colors[4]));
+    style.define('colorSecondary', new stylus.nodes.Literal(colors[5]));
+    style.define('colorSecondaryLightest', new stylus.nodes.Literal(colors[6]));
+    style.define('colorTertiary', new stylus.nodes.Literal(colors[7]));
+    style.define('colorTertiaryLightest', new stylus.nodes.Literal(colors[8]));
+    style.define('colorQuaternary', new stylus.nodes.Literal(colors[9]));
+    style.define('colorQuaternaryLightest', new stylus.nodes.Literal(colors[10]));
+
+    style.define('colorWater', new stylus.nodes.Literal(colors[11]));
+    style.define('colorLand', new stylus.nodes.Literal(colors[12]));
+    style.define('colorSrc', new stylus.nodes.Literal(colors[13]));
+    style.define('colorDst', new stylus.nodes.Literal(colors[14]));
+
+    style.render(function(err, css){
+      if (err) {return console.log("ERROR - ", err);}
+      var date = new Date().toUTCString();
+      res.setHeader('Content-Type', 'text/css');
+      res.setHeader('Date', date);
+      res.setHeader('Cache-Control', 'public, max-age=0');
+      res.setHeader('Last-Modified', date);
+      res.send(css);
+    });
+  });
+});
+
 
 /* User Endpoints ---------------------------------------------------------- */
 // default settings for users with no settings
@@ -938,7 +1014,8 @@ var settingDefaults = {
   spiGraph      : 'no',
   connSrcField  : 'a1',
   connDstField  : 'ip.dst:port',
-  numPackets    : 'last'
+  numPackets    : 'last',
+  theme         : 'default-theme'
 };
 
 // gets the current user
@@ -969,9 +1046,12 @@ app.get('/user/current', function(req, res) {
 
     clone['canUpload'] = app.locals.allowUploads;
 
-    // send default settings if user doesn't have settings
-    if (Object.keys(clone.settings).length === 0) {
-      clone.settings = settingDefaults;
+    // If no settings, use defaults
+    if (clone.settings === undefined) {clone.settings = settingDefaults;}
+
+    // Use settingsDefaults for any settings that are missing
+    for (var item in settingDefaults) {
+      if (clone.settings[item] === undefined) {clone.settings[item] = settingDefaults[item];}
     }
 
     return res.send(clone);
@@ -1127,7 +1207,8 @@ app.post('/user/views/create', checkCookieToken, function(req, res) {
       }
       return res.send(JSON.stringify({
         success : true,
-        text    : 'Created view successfully'
+        text    : 'Created view successfully',
+        views   : user.views
       }));
     });
   });
@@ -1587,6 +1668,11 @@ app.post('/user/columns/delete', checkCookieToken, function(req, res) {
       }));
     });
   });
+});
+
+app.get('/decodings', function(req, res) {
+  var decodeItems = decode.settings();
+  res.send(JSON.stringify(decodeItems));
 });
 
 
@@ -2394,7 +2480,6 @@ app.get('/stats.json', function(req, res) {
   }
 
   if (req.query.sortField !== undefined || req.query.desc !== undefined) {
-    console.log("DESC", req.query.desc, typeof req.query.desc);
     query.sort = {};
     req.query.sortField = req.query.sortField || "nodeName";
     query.sort[req.query.sortField] = { order: req.query.desc === "true" ? "desc": "asc"};
@@ -2819,14 +2904,16 @@ app.get('/sessions.json', function(req, res) {
 });
 
 app.get('/spigraph.json', function(req, res) {
+  function error(text) {
+    res.status(403);
+    return res.send(JSON.stringify({success: false, text: text}));
+  }
+
   req.query.facets = 1;
   buildSessionQuery(req, function(bsqErr, query, indices) {
     var results = {items: [], graph: {}, map: {}, iTotalRecords: 0};
     if (bsqErr) {
-      results.bsqErr = bsqErr.toString();
-      results.health = Db.healthCache();
-      res.send(results);
-      return;
+      return error(bsqErr.toString());
     }
 
     delete query.sort;
@@ -2870,9 +2957,8 @@ app.get('/spigraph.json', function(req, res) {
     Db.numberOfDocuments('sessions-*', function (err, total) {results.recordsTotal = total;});
     Db.searchPrimary(indices, 'session', query, function(err, result) {
       if (err || result.error) {
-        results.bsqErr = errorString(err, result);
         console.log("spigraph.json error", err, (result?result.error:null));
-        return res.send(results);
+        return error(errorString(err, result));
       }
       results.recordsFiltered = result.hits.total;
 
@@ -3304,7 +3390,8 @@ app.get('/connections.json', function(req, res) {
   Db.healthCache(function(err, h) {health = h;});
   buildConnections(req, res, function (err, nodes, links, total) {
     if (err) {
-      return res.send({health: health, bsqErr: err.toString()});
+      res.status(403);
+      return res.send(JSON.stringify({success: false, text: err.toString()}));
     }
     res.send({health: health, nodes: nodes, links: links, recordsFiltered: total});
   });
@@ -3331,56 +3418,87 @@ app.get('/connections.csv', function(req, res) {
   });
 });
 
-function csvListWriter(req, res, list, pcapWriter, extension) {
+function csvListWriter(req, res, list, fields, pcapWriter, extension) {
   if (list.length > 0 && list[0].fields) {
     list = list.sort(function(a,b){return a.fields.lp - b.fields.lp;});
   } else if (list.length > 0 && list[0]._source) {
     list = list.sort(function(a,b){return a._source.lp - b._source.lp;});
   }
 
-  res.write("Protocol, First Packet, Last Packet, Source IP, Source Port, Source Geo, Destination IP, Destination Port, Destination Geo, Packets, Bytes, Data Bytes, Node\r\n");
+  var fieldObjects  = Config.getDBFieldsMap();
 
-  for (var i = 0, ilen = list.length; i < ilen; i++) {
-    var fields = list[i]._source || list[i].fields;
-
-    if (!fields) {
-      continue;
+  if (fields) {
+    var columnHeaders = [];
+    for (var i = 0, len = fields.length; i < len; ++i) {
+      columnHeaders.push(fieldObjects[fields[i]].friendlyName);
     }
-    var pr;
-    switch (fields.pr) {
-    case 1:
-      pr = "icmp";
-      break;
-    case 6:
-      pr = "tcp";
-      break;
-    case 17:
-      pr =  "udp";
-      break;
-    case 58:
-      pr =  "icmpv6";
-      break;
-    }
-
-
-    res.write(pr + ", " + fields.fp + ", " + fields.lp + ", " + Pcap.inet_ntoa(fields.a1) + ", " + fields.p1 + ", " + (fields.g1||"") + ", "  + Pcap.inet_ntoa(fields.a2) + ", " + fields.p2 + ", " + (fields.g2||"") + ", " + fields.pa + ", " + fields.by + ", " + fields.db + ", " + fields.no + "\r\n");
+    res.write(columnHeaders.join(', '));
+    res.write('\r\n');
   }
+
+  for (var j = 0, jlen = list.length; j < jlen; j++) {
+    var sessionData = list[j]._source || list[j].fields;
+
+    if (!fields) { continue; }
+
+    var values = [];
+    for (var k = 0, len = fields.length; k < len; ++k) {
+      let value = sessionData[fields[k]];
+      if (fields[k] === 'pr' && value) {
+        switch (value) {
+          case 1:
+            value = 'icmp';
+            break;
+          case 6:
+            value = 'tcp';
+            break;
+          case 17:
+            value =  'udp';
+            break;
+          case 58:
+            value =  'icmpv6';
+            break;
+        }
+      } else if (fieldObjects[fields[k]].type === 'ip' && value) {
+        value = Pcap.inet_ntoa(value);
+      }
+
+      if (Array.isArray(value)) {
+        let singleValue = '"' + value.join(', ') +  '"';
+        values.push(singleValue);
+      } else {
+        if (value === undefined) { value = ''; }
+        values.push(value);
+      }
+    }
+
+    res.write(values.join(','));
+    res.write('\r\n');
+  }
+
   res.end();
 }
 
 app.get(/\/sessions.csv.*/, function(req, res) {
   noCache(req, res, "text/csv");
+  // default fields to display in csv
   var fields = ["pr", "fp", "lp", "a1", "p1", "g1", "a2", "p2", "g2", "by", "db", "pa", "no"];
+  // save requested fields because sessionsListFromQuery returns fields with
+  // "ro" appended onto the end
+  var reqFields = fields;
+
+  if (req.query.fields) {
+    fields = reqFields = req.query.fields.split(',');
+  }
 
   if (req.query.ids) {
     var ids = queryValueToArray(req.query.ids);
-
     sessionsListFromIds(req, ids, fields, function(err, list) {
-      csvListWriter(req, res, list);
+      csvListWriter(req, res, list, reqFields);
     });
   } else {
     sessionsListFromQuery(req, res, fields, function(err, list) {
-      csvListWriter(req, res, list);
+      csvListWriter(req, res, list, reqFields);
     });
   }
 });
@@ -4573,50 +4691,6 @@ app.post('/user/views/delete', checkCookieToken, function(req, res) {
   });
 });
 
-app.post('/user/views/create', checkCookieToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.viewName)   { return error("Missing view name"); }
-  if (!req.body.expression) { return error("Missing view expression"); }
-
-  Db.getUser(req.token.userId, function(err, user) {
-    if (err || !user.found) {
-      console.log("Create view failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.views = user.views || {};
-    var container = user.views;
-    if (req.body.groupName) {
-      req.body.groupName = req.body.groupName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-      if (!user.views._groups) {
-        user.views._groups = {};
-      }
-      if (!user.views._groups[req.body.groupName]) {
-        user.views._groups[req.body.groupName] = {};
-      }
-      container = user.views._groups[req.body.groupName];
-    }
-    req.body.viewName = req.body.viewName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-    if (container[req.body.viewName]) {
-      container[req.body.viewName].expression = req.body.expression;
-    } else {
-      container[req.body.viewName] = {expression: req.body.expression};
-    }
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("Create view error", err, info);
-        return error("Create view failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Created view successfully", views:user.views}));
-    });
-  });
-});
-
 internals.usersMissing = {
   userId: "",
   userName: "",
@@ -5264,7 +5338,8 @@ app.post('/scrub', function(req, res) {
       scrubList(req, res, false, list);
     });
   } else {
-    res.end("Missing expression or list of ids");
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Error: Missing expression. An expression is required so you don\'t scrub everything.' }));
   }
 });
 
@@ -5284,7 +5359,8 @@ app.post('/delete', function(req, res) {
       scrubList(req, res, true, list);
     });
   } else {
-    res.end("Missing expression or list of ids");
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Error: Missing expression. An expression is required so you don\'t delete everything.' }));
   }
 });
 
@@ -5358,7 +5434,7 @@ function sendSessionWorker(options, cb) {
     }
 
     var info = url.parse(sobj.url + "/receiveSession?saveId=" + options.saveId);
-    addAuth(info, options.user, options.nodeName, sobj.passwordSecret);
+    addAuth(info, options.user, options.nodeName, sobj.serverSecret || sobj.passwordSecret);
     info.method = "POST";
 
     var result = "";
@@ -5409,7 +5485,9 @@ app.get('/:nodeName/sendSession/:id', checkProxyRequest, function(req, res) {
     nodeName: req.params.nodeName
   };
 
-  internals.sendSessionQueue.push(options, res.end);
+  internals.sendSessionQueue.push(options, function () {
+    res.end();
+  });
 });
 
 app.post('/:nodeName/sendSessions', checkProxyRequest, function(req, res) {

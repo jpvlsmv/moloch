@@ -66,6 +66,11 @@
           this.timeRange  = '0'; // custom time range
           this.stopTime   = stop;
           this.startTime  = start;
+          if (stop < start) {
+            this.timeError = 'Stop time cannot be before start time';
+          }
+          // update the displayed time range
+          this.deltaTime = this.stopTime - this.startTime;
         } else { // if we can't parse stop or start time, set default
           this.timeRange = '1'; // default to 1 hour
           this.$location.search('date', this.timeRange);
@@ -83,13 +88,15 @@
         this.expression = { value: this.$routeParams.expression };
       } else { this.expression = { value: null }; }
 
-      this.timeBounding = "last"; // default to lastPacket
+      this.timeBounding = 'last'; // default to lastPacket
       if (this.$routeParams.bounding) { this.timeBounding = this.$routeParams.bounding; }
 
       // load user's previous view choice
       if (sessionStorage && sessionStorage['moloch-view']) {
         this.view = sessionStorage['moloch-view'];
-        this.$location.search('view', this.view); // update url params
+      }
+      if (this.$routeParams.view) { // url param trumps storage
+        this.view = this.$routeParams.view;
       }
 
       // date picker popups hidden to start
@@ -111,7 +118,7 @@
           this.stopTime   = parseInt(args.stop * 1000, 10);
         }
 
-        this.changeDate();
+        this.changeDate(true);
       });
 
       // watch for closing the action form
@@ -134,6 +141,8 @@
      * Fired when the time range value changes
      */
     changeTimeRange() {
+      this.timeError = false;
+
       this.$location.search('date', this.timeRange);
       this.$location.search('stopTime', null);
       this.$location.search('startTime', null);
@@ -143,30 +152,40 @@
 
     /**
      * Fired when a date value is changed
+     * @param {bool} loadData Whether to issue query after updating time
      */
-     changeDate() {
+     changeDate(loadData) {
+       this.timeError = false;
        this.timeRange = '0'; // custom time range
 
-       let stopSec  = (this.stopTime / 1000).toFixed();
-       let startSec = (this.startTime / 1000).toFixed();
+       let stopSec  = parseInt((this.stopTime / 1000).toFixed());
+       let startSec = parseInt((this.startTime / 1000).toFixed());
 
        // only continue if start and stop are valid numbers
        if (!startSec || !stopSec || isNaN(startSec) || isNaN(stopSec)) {
          return;
        }
 
-       this.$location.search('date', null);
-       this.$location.search('stopTime', (this.stopTime / 1000).toFixed());
-       this.$location.search('startTime', (this.startTime / 1000).toFixed());
+       if (stopSec < startSec) { // don't continue if stop < start
+         this.timeError = 'Stop time cannot be before start time';
+         return;
+       }
 
-       this.change();
+       // update the displayed time range
+       this.deltaTime = this.stopTime - this.startTime;
+
+       this.$location.search('date', null);
+       this.$location.search('stopTime', stopSec);
+       this.$location.search('startTime', startSec);
+
+       if (loadData) { this.change(); }
      }
 
      /**
       * Fired when change bounded checkbox is (un)checked
       */
      changeTimeBounding() {
-       if (this.timeBounding !== "last") {
+       if (this.timeBounding !== 'last') {
          this.$location.search('bounding', this.timeBounding);
        } else {
          this.$location.search('bounding', null);
@@ -263,9 +282,6 @@
         this.stopTime   = currentTime;
         useDateRange    = true;
       }
-
-      // update the displayed time range
-      this.deltaTime = this.stopTime - this.startTime;
 
       // always use startTime and stopTime instead of date range (except for all)
       // querying with date range causes unexpected paging behavior
@@ -370,7 +386,8 @@
         numVisibleSessions  : '<',
         numMatchingSessions : '<',
         start               : '<',
-        timezone            : '<'
+        timezone            : '<',
+        fields              : '<'
       }
     });
 

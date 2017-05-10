@@ -51,6 +51,7 @@
     "angular": "^1.5.8",
     "angular-animate": "^1.5.8",
     "angular-bind-notifier": "^1.1.7",
+    "angular-bootstrap-colorpicker": "^3.0.25",
     "angular-filter": "^0.5.11",
     "angular-mocks": "^1.5.8",
     "angular-resource": "^1.5.8",
@@ -73,8 +74,6 @@
     "karma-spec-reporter": "0.0.26",
     "karma-webpack": "^1.8.0",
     "ngdraggable": "^0.1.10",
-    "node-sass": "^3.8.0",
-    "sass-loader": "^4.0.0",
     "style-loader": "^0.13.1",
     "url-loader": "^0.5.7",
     "webpack": "^1.13.2"

@@ -43,7 +43,6 @@
 
 #define MOLOCH_V6_TO_V4(_addr) (((uint32_t *)(_addr).s6_addr)[3])
 
-#define MOLOCH_SNAPLEN 16384
 #define MOLOCH_PACKET_MAX_LEN 0x10000
 
 /******************************************************************************/
@@ -88,7 +87,7 @@ typedef HASH_VAR(s_, MolochStringHashStd_t, MolochStringHead_t, 13);
 typedef struct moloch_trie_node {
     void                     *data;
     struct moloch_trie_node **children;
-    char                      value, first, last;
+    uint8_t                   value, first, last;
 } MolochTrieNode_t;
 
 typedef struct moloch_trie {
@@ -344,6 +343,7 @@ typedef struct moloch_config {
     uint32_t  maxFreeOutputBuffers;
     uint32_t  fragsTimeout;
     uint32_t  maxFrags;
+    uint32_t  snapLen;
 
     int       packetThreads;
 
@@ -763,7 +763,7 @@ void moloch_http_exit();
 int moloch_http_queue_length(void *server);
 uint64_t moloch_http_dropped_count(void *server);
 
-void *moloch_http_create_server(const char *hostnames, int defaultPort, int maxConns, int maxOutstandingRequests, int compress);
+void *moloch_http_create_server(const char *hostnames, int maxConns, int maxOutstandingRequests, int compress);
 void moloch_http_set_header_cb(void *server, MolochHttpHeader_cb cb);
 void moloch_http_free_server(void *server);
 

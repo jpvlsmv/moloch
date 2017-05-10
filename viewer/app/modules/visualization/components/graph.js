@@ -2,7 +2,7 @@
 
   'use strict';
 
-  var initialized = false;
+  let initialized = false;
 
   angular.module('moloch')
 
@@ -11,17 +11,21 @@
      * uses Angular Flot
      *
      * @example
-     * <session-graph graph-data="$ctrl.graphData"></session-graph>
+     * <session-graph graph-data="$ctrl.graphData" graph-type="'lpHisto'"
+     *   timezone="{{::$ctrl.timezone}}" primary="{{::$ctrl.primary}}">
+     * </session-graph>
      */
-    .directive('sessionGraph', ['$filter', '$timeout', '$document',
-      function($filter, $timeout, $document) {
+    .directive('sessionGraph', ['$filter', '$timeout', '$document', '$window',
+      function($filter, $timeout, $document, $window) {
       return {
         template: require('html!../templates/graph.html'),
-        scope   : { graphData: '=', type: '@' },
+        scope   : { graphData: '=', type: '@', timezone: '@', primary: '@' },
         link    : function(scope, element, attrs) {
 
+          let body = $document[0].body;
+
           /* internal functions -------------------------------------------- */
-          var timeout;
+          let timeout;
           function debounce(func, funcParam, ms) {
             if (timeout) { $timeout.cancel(timeout); }
 
@@ -31,9 +35,9 @@
           }
 
           function updateResults(graph) {
-            var xAxis = graph.getXAxes();
+            let xAxis = graph.getXAxes();
 
-            var result = {
+            let result = {
               start : (xAxis[0].min / 1000).toFixed(),
               stop  : (xAxis[0].max / 1000).toFixed()
             };
@@ -44,6 +48,11 @@
           }
 
           function setup(data) {
+            let styles = $window.getComputedStyle(body);
+            let foregroundColor = styles.getPropertyValue('--color-foreground').trim();
+            let primaryColor    = styles.getPropertyValue('--color-primary').trim();
+            let highlightColor  = styles.getPropertyValue('--color-gray-darker').trim();
+
             scope.graph         = [{ data:data[scope.type] }];
 
             scope.graphOptions  = { // flot graph options
@@ -53,25 +62,25 @@
                   fill: 1,
                   barWidth: (data.interval * 1000) / 1.7
                 },
-                color : '#66057A'
+                color : primaryColor
               },
               selection : {
                 mode    : 'x',
-                color   : '#333333'
+                color   : highlightColor
               },
               xaxis   : {
                 mode  : 'time',
                 label : 'Datetime',
-                color : '#777',
+                color : foregroundColor,
                 min   : data.xmin || null,
                 max   : data.xmax || null,
                 tickFormatter: function(v, axis) {
-                  return $filter('date')(v, 'yyyy/MM/dd HH:mm:ss');
+                  return $filter('timezoneDateString')(v/1000, scope.timezone || 'local');
                 }
               },
               yaxis   : {
                 min   : 0,
-                color : '#777',
+                color : foregroundColor,
                 zoomRange       : false,
                 autoscaleMargin : 0.2,
                 tickFormatter   : function(v, axis) {
@@ -80,7 +89,7 @@
               },
               grid          : {
                 borderWidth : 0,
-                color       : '#777',
+                color       : foregroundColor,
                 hoverable   : true,
                 clickable   : true
               },
@@ -105,8 +114,8 @@
           setup(scope.graphData);
 
           // create flot graph
-          var plotArea  = element.find('.plot-area');
-          var plot      = $.plot(plotArea, scope.graph, scope.graphOptions);
+          let plotArea  = element.find('.plot-area');
+          let plot      = $.plot(plotArea, scope.graph, scope.graphOptions);
 
 
           /* LISTEN! */
@@ -123,7 +132,7 @@
 
           // triggered when an area of the graph is selected
           plotArea.on('plotselected', function (event, ranges) {
-            var result = {
+            let result = {
               start : (ranges.xaxis.from / 1000).toFixed(),
               stop  : (ranges.xaxis.to / 1000).toFixed()
             };
@@ -133,7 +142,7 @@
             }
       		});
 
-          var previousPoint, body = $document[0].body;
+          let previousPoint;
           // triggered when hovering over the graph
           plotArea.on('plothover', function(event, pos, item) {
             if (item) {
@@ -142,11 +151,11 @@
 
                 $(body).find('#tooltip').remove();
 
-                var y = $filter('commaString')(Math.round(item.datapoint[1]*100)/100);
-                var d = $filter('date')(item.datapoint[0].toFixed(0),
+                let y = $filter('commaString')(Math.round(item.datapoint[1]*100)/100);
+                let d = $filter('date')(item.datapoint[0].toFixed(0),
                                         'yyyy/MM/dd HH:mm:ss');
 
-                var tooltipHTML = `<div id="tooltip" class="graph-tooltip">
+                let tooltipHTML = `<div id="tooltip" class="graph-tooltip">
                                     ${y} at ${d}</div>`;
 
                 $(tooltipHTML).css({
@@ -180,7 +189,9 @@
             plot.setupGrid();
             plot.draw();
 
-            scope.$emit('change:histo:type', scope.type);
+            if (scope.primary) { // primary graph sets all graph's histo type
+              scope.$emit('change:histo:type', scope.type);
+            }
           };
 
           scope.zoomOut = function() {

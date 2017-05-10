@@ -1,5 +1,7 @@
 INSTALL_DIR   = @INSTALL_DIR@
 
+BUILD_VERSION := $(shell @GIT@ describe --tags)
+
 CC            = @CC@
 
 INCLUDE_PCAP  = @PCAP_CFLAGS@
@@ -33,7 +35,8 @@ bindir          = @prefix@/bin
 all:thirdparty/js0n.o thirdparty/http_parser.o thirdparty/patricia.o
 	$(CC) -fPIC @CFLAGS@ -Wall -Wextra -D_GNU_SOURCE -c $(C_FILES) \
 	    $(INCLUDE_PCAP) \
-	    $(INCLUDE_OTHER) 
+	    $(INCLUDE_OTHER) \
+	    -DBUILD_VERSION='"$(BUILD_VERSION)"'
 	$(CC) -rdynamic -ggdb $(O_FILES) -o moloch-capture \
             @UNDEFINED_FLAGS@ \
 	    $(LIB_PCAP) \

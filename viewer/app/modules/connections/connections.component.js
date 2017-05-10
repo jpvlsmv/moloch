@@ -9,7 +9,7 @@
   let _query = {};
 
   // save visualization data
-  let svg, force, svgMain;
+  let force, svgMain;
 
   /**
    * @class ConnectionsController
@@ -72,6 +72,12 @@
       this.nodeDist   = _query.nodeDist   = parseInt(this.$routeParams.nodeDist || '125');
       this.minConn    = _query.minConn    = parseInt(this.$routeParams.minConn || '1');
 
+      let styles = window.getComputedStyle(document.body);
+      this.primaryColor   = styles.getPropertyValue('--color-primary').trim();
+      this.secondaryColor = styles.getPropertyValue('--color-tertiary').trim();
+      this.tertiaryColor  = styles.getPropertyValue('--color-quaternary').trim();
+      this.colors = ['', this.primaryColor, this.tertiaryColor, this.secondaryColor];
+
       this.startD3();
 
       this.$scope.$on('change:search', (event, args) => {
@@ -97,6 +103,11 @@
       $('footer').hide();
     }
 
+    /* fired when controller's containing scope is destroyed */
+    $onDestroy() {
+      d3.select(window).off('resize', this.resize);
+    }
+
     /* sets up d3 graph and saves variables for use in other functions */
     startD3() {
       let self = this;
@@ -106,7 +117,6 @@
       self.width      = $(window).width();
       self.height     = $(window).height() - 166;
       self.popupTimer = null;
-      self.colors     = ['', 'green', 'red', 'purple'];
       networkElem     = $('#network');
 
       function redraw() {
@@ -115,7 +125,7 @@
         self.scale = d3.event.scale;
 
         // transform the vis
-        svg.attr('transform', 'translate(' + self.trans + ')' + ' scale(' + self.scale + ')');
+        self.svg.attr('transform', 'translate(' + self.trans + ')' + ' scale(' + self.scale + ')');
       }
 
       self.zoom = d3.behavior.zoom()
@@ -128,11 +138,11 @@
         .attr('width', self.width)
         .attr('height', self.height);
 
-      svg = svgMain.append('svg:g')
+      self.svg = svgMain.append('svg:g')
         .call(self.zoom)
         .append('svg:g');
 
-      svg.append('svg:rect')
+      self.svg.append('svg:rect')
         .attr('width', networkElem.width() + 1000)
         .attr('height', networkElem.height() + 1000)
         .attr('fill', 'white')
@@ -146,6 +156,17 @@
         .distance(self.nodeDist)
         .charge(-300)
         .size([self.width, self.height]);
+
+      d3.select(window).on('resize', this.resize);
+    }
+
+    /* resizes the graph by setting new width and height */
+    resize() {
+      let width  = $(window).width();
+      let height = $(window).height() - 166;
+
+      svgMain.attr('width', width).attr('height', height);
+      force.size([width, height]).resume();
     }
 
     /* removes existing nodes, update url parameters and retrieves data from
@@ -156,8 +177,8 @@
 
       networkLabelElem.hide();
 
-      svg.selectAll('.link').remove();
-      svg.selectAll('.node').remove();
+      this.svg.selectAll('.link').remove();
+      this.svg.selectAll('.node').remove();
 
       // build new query and save values in url parameters
       _query.length   = this.querySize;
@@ -183,7 +204,7 @@
         })
         .catch((error) => {
           this.loading  = false;
-          this.error    = error;
+          this.error    = error.text;
         });
     }
 
@@ -197,7 +218,7 @@
 
     /* unlocks nodes in the graph */
     unlock() {
-      svg.selectAll('.node circle').each(function(d) { d.fixed = 0; });
+      this.svg.selectAll('.node circle').each(function(d) { d.fixed = 0; });
       force.resume();
     }
 
@@ -224,6 +245,11 @@
     }
 
     processData(json) {
+      if (!json.nodes) {
+        this.error = 'No nodes returned from your query.';
+        return;
+      }
+
       let self = this;
       let doConvert = 0;
       doConvert |= (self.dbField2Type(self.srcField) === 'seconds')?1:0;
@@ -233,7 +259,7 @@
         let dateFilter = this.$filter('date');
         for (let i = 0; i < json.nodes.length; i++) {
           let dataNode = json.nodes[i];
-          if (doConvert & dataNode.type) {
+          if (dataNode.type) {
             dataNode.id = dateFilter(dataNode.id);
           }
         }
@@ -307,11 +333,12 @@
         }
       }
 
-      link = svg.selectAll('.link')
+      link = self.svg.selectAll('.link')
         .data(json.links)
         .enter().append('line')
         .attr('class', 'link')
         .style('stroke-width', function(d) { return Math.min(1 + Math.log(d.value), 12);})
+        .style('stroke', '#ccc')
         .on('mouseover',function(d) {
           if (self.popupTimer) {
             window.clearTimeout(self.popupTimer);
@@ -334,7 +361,7 @@
           d3.select(this).classed('dragging', false);
         });
 
-      node = svg.selectAll('.node')
+      node = self.svg.selectAll('.node')
         .data(json.nodes)
         .enter().append('g')
         .attr('class', 'node')
@@ -418,11 +445,7 @@
       let content = that.$compile(template)(that.$scope);
       that.$scope.$apply();
 
-      networkLabelElem.html(content)
-        .css({ left: that.trans[0] + (node.px*that.scale) + 25,
-                top: that.trans[1] + (node.py*that.scale) + networkLabelElem.height()/2
-            })
-        .show();
+      that.positionPopup(node.px, node.py, content);
     }
 
     showLinkPopup(that, link, mouse) {
@@ -436,11 +459,39 @@
       let content = that.$compile(template)(that.$scope);
       that.$scope.$apply();
 
+      that.positionPopup(mouse[0], mouse[1], content);
+    }
+
+    /**
+     * Positions and displays a popup on the connections graph within the view
+     * @param {num} px      The x coordinate of the mouse/node
+     * @param {num} py      The y coordinate of the mouse/node
+     * @param {obj} content The content to display in the popup
+     */
+    positionPopup(px, py, content) {
+      let x = -180; // 180 = width of popup + 10 padding
+
+      // if the position node is too far to the left to accommodate the popup,
+      // render it on the right of the node instead of the left
+      if (this.trans[0] + (px * this.scale) < 180) { x = 10; }
+
       networkLabelElem.html(content)
-        .css({ left: that.trans[0] + (mouse[0]*that.scale) + 25,
-                top: that.trans[1] + (mouse[1]*that.scale) + networkLabelElem.height()/2
-            })
-        .show();
+        .css({
+          left: this.trans[0] + (px * this.scale) + x,
+          top : this.trans[1] + (py * this.scale) -20
+        }).show();
+    }
+
+    /**
+     * Displays the field.exp instead of field.dbField in the field typeahead
+     * @param {string} value The dbField of the field
+     */
+    formatField(value) {
+      for (let i = 0, len = this.fields.length; i < len; i++) {
+        if (value === this.fields[i].dbField) {
+          return this.fields[i].exp;
+        }
+      }
     }
   }
 

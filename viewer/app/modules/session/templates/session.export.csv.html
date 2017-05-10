@@ -21,10 +21,11 @@
         Filename
       </span>
       <input ng-model="$ctrl.filename"
+        enter-click="$ctrl.exportCSV()"
         type="text" class="form-control"
         placeholder="Enter a filename">
       <span class="input-group-btn">
-        <button class="btn btn-green" ng-click="$ctrl.exportCSV()">
+        <button class="btn btn-theme-tertiary" ng-click="$ctrl.exportCSV()">
           <span class="fa fa-upload"></span>&nbsp;
           Export CSV
         </button>

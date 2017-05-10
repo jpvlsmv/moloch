@@ -27,41 +27,56 @@
         </div>
       </div> <!-- /query size select -->
 
-      <!-- src select -->
-      <div class="form-group margined-bottom">
-        <div class="input-group input-group-sm">
-          <span class="input-group-addon cursor-help"
-            tooltip-placement="bottom"
-            uib-tooltip="Source field">
-            Src:
-          </span>
-          <select class="form-control"
-            ng-change="$ctrl.loadData()"
-            ng-model="$ctrl.srcField">
-            <option ng-repeat="field in ::$ctrl.fields" value="{{field.dbField}}">
-              {{field.exp}}
-            </option>
-          </select>
-        </div>
-      </div> <!-- /src select -->
+      <span ng-if="$ctrl.fields">
+        <!-- src select -->
+        <div class="form-group margined-bottom">
+          <div class="input-group input-group-sm">
+            <span class="input-group-addon legend cursor-help"
+              tooltip-placement="bottom"
+              ng-style="{'background-color':$ctrl.primaryColor}"
+              uib-tooltip="Select a field for the source nodes">
+              Src:
+            </span>
+            <input type="text" ng-model="$ctrl.srcField"
+              class="form-control field-typeahead"
+              typeahead-min-length="0"
+              typeahead-on-select="$ctrl.loadData()"
+              typeahead-input-formatter="$ctrl.formatField($model)"
+              uib-typeahead="field.dbField as field.exp for field in $ctrl.fields | filter:{exp:$viewValue}">
+          </div>
+        </div> <!-- /src select -->
 
-      <!-- dst select -->
+        <!-- dst select -->
+        <div class="form-group margined-bottom">
+          <div class="input-group input-group-sm">
+            <span class="input-group-addon legend cursor-help"
+              tooltip-placement="bottom"
+              ng-style="{'background-color':$ctrl.tertiaryColor}"
+              uib-tooltip="Select a field for the destination nodes">
+              Dst:
+            </span>
+            <input type="text" ng-model="$ctrl.dstField"
+              class="form-control field-typeahead"
+              typeahead-min-length="0"
+              typeahead-on-select="$ctrl.loadData()"
+              typeahead-input-formatter="$ctrl.formatField($model)"
+              uib-typeahead="field.dbField as field.exp for field in $ctrl.fields | filter:{exp:$viewValue}">
+          </div>
+        </div> <!-- /dst select -->
+      </span>
+
       <div class="form-group margined-bottom">
         <div class="input-group input-group-sm">
-          <span class="input-group-addon cursor-help"
+          <span class="input-group-addon legend cursor-help"
             tooltip-placement="bottom"
-            uib-tooltip="Destination Field">
-            Dst:
+            tooltip-append-to-body="true"
+            style="border-radius:4px;"
+            ng-style="{'background-color':$ctrl.secondaryColor}"
+            uib-tooltip="This is the color of a node that is both a source and destination node">
+            Src & Dst
           </span>
-          <select class="form-control"
-            ng-change="$ctrl.loadData()"
-            ng-model="$ctrl.dstField">
-            <option ng-repeat="field in ::$ctrl.fields" value="{{field.dbField}}">
-            {{field.exp}}
-            </option>
-          </select>
         </div>
-      </div> <!-- /dst select -->
+      </div>
 
       <!-- min connections select -->
       <div class="form-group margined-bottom">

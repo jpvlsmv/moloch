@@ -9,29 +9,41 @@
      * uses JQuery Vector Map
      *
      * @example
-     * <moloch-map ng-if="$ctrl.mapData" map-data="$ctrl.mapData"></moloch-map>
+     * <moloch-map ng-if="$ctrl.mapData" map-data="$ctrl.mapData"
+     *   toggle-map="$ctrl.toggleMap()" primary="{{::$ctrl.primary}}">
+     * </moloch-map>
      */
     .directive('molochMap', ['FieldService', '$filter', '$document', '$timeout', '$window',
     function(FieldService, $filter, $document, $timeout, $window) {
       return {
-        scope   : { 'mapData': '=', 'toggleMap': '&' },
+        scope   : { 'mapData': '=', 'toggleMap': '&', 'primary': '@' },
         template: require('html!../templates/map.html'),
         link    : function(scope, element, attrs) {
           /* setup --------------------------------------------------------- */
           scope.state = { open:false, src:true, dst:true };
 
-          let map, countryCodes;
-          let mapEl = element.find('.moloch-map-container > #moloch-map');
+          let map, mapEl = element.find('.moloch-map-container > #moloch-map');
+
+          let styles = $window.getComputedStyle($document[0].body);
+          let waterColor        = styles.getPropertyValue('--color-water').trim();
+          let landColorDark     = styles.getPropertyValue('--color-land-dark').trim();
+          let landColorLight    = styles.getPropertyValue('--color-land-light').trim();
+
+          if (!landColorDark || !landColorLight) {
+            landColorDark  = styles.getPropertyValue('--color-primary-dark').trim();
+            landColorLight = styles.getPropertyValue('--color-primary-lightest').trim();
+          }
 
           mapEl.vectorMap({ // setup map
             map             : 'world_en',
-            backgroundColor : '#6FB5B5',
+            backgroundColor : waterColor,
             hoverColor      : 'black',
             hoverOpacity    : 0.7,
             series: {
               regions: [{
-                scale: ['#CFAED6', '#630078'],
-                normalizeFunction: 'polynomial'
+                scale: [ landColorLight, landColorDark ],
+                normalizeFunction: 'polynomial',
+                attribute: 'fill'
               }]
             },
             onRegionLabelShow: function(e, el, code){
@@ -45,12 +57,9 @@
             }
           });
 
+
           // save reference to the map
           map = mapEl.children('.jvectormap-container').data('mapObject');
-          countryCodes = map.regions;
-
-          // save the maps country codes to be used throughout the app
-          FieldService.saveCountryCodes(countryCodes);
 
 
           function setup(data) {
@@ -87,6 +96,23 @@
           // watch for map data to change to update the map
           scope.$watch('mapData', (data) => {
             setup(data);
+          });
+
+          /* watch for toggle event from primary map */
+          scope.$on('update:src:dst', (event, state) => {
+            let changed = false;
+
+            if (scope.state.src !== state.src) {
+              scope.state.src = state.src;
+              changed = true;
+            }
+
+            if (scope.state.dst !== state.dst) {
+              scope.state.dst = state.dst;
+              changed = true;
+            }
+
+            if (changed) { setup(scope.mapData); }
           });
 
 
@@ -162,6 +188,10 @@
           scope.toggleSrcDst = function(type) {
             scope.state[type] = !scope.state[type];
             setup(scope.mapData);
+
+            if (scope.primary) { // primary map sets all other map's src/dst
+              scope.$emit('toggle:src:dst', scope.state);
+            }
           };
 
         }

@@ -291,6 +291,11 @@
 
       url += `&segments=${params.segments}`;
 
+      if (params.fields && params.fields.length) {
+        let fields = params.fields.join(',');
+        url += `&fields=${fields}`;
+      }
+
       this.$window.location = url;
     }
 
@@ -310,7 +315,7 @@
           .then((response) => {
             resolve(response);
           }, (error) => {
-            reject(error);
+            reject(error.data);
           });
 
       });
@@ -332,7 +337,7 @@
           .then((response) => {
             resolve(response);
           }, (error) => {
-            reject(error);
+            reject(error.data);
           });
 
       });
@@ -391,6 +396,26 @@
       url += `&field=${dbField}`;
 
       this.$window.open(url, '_blank');
+    }
+
+    /**
+     * Gets other decodings for session pcap data
+     * @returns {Promise} Promise A promise object that signals the completion
+     *                            or rejection of the request.
+     */
+    getDecodings() {
+      return this.$q((resolve, reject) => {
+
+        let options = { url:'decodings', method:'GET', cache:true };
+
+        this.$http(options)
+          .then((response) => {
+            resolve(response.data);
+          }, (error) => {
+            reject(error);
+          });
+
+      });
     }
 
 

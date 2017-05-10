@@ -29,6 +29,10 @@
 #include "pcap.h"
 #include "molochconfig.h"
 
+#ifndef BUILD_VERSION
+#define BUILD_VERSION "unkn"
+#endif
+
 /******************************************************************************/
 MolochConfig_t         config;
 extern void           *esServer;
@@ -68,7 +72,7 @@ static GOptionEntry entries[] =
     { "debug",     'd', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK,       moloch_debug_flag,     "Turn on all debugging", NULL },
     { "quiet",     'q',                    0, G_OPTION_ARG_NONE,           &config.quiet,         "Turn off regular logging", NULL },
     { "copy",        0,                    0, G_OPTION_ARG_NONE,           &config.copyPcap,      "When in offline mode copy the pcap files into the pcapDir from the config file", NULL },
-    { "dryrun",      0,                    0, G_OPTION_ARG_NONE,           &config.dryRun,        "dry run, noting written to databases or filesystem", NULL },
+    { "dryrun",      0,                    0, G_OPTION_ARG_NONE,           &config.dryRun,        "dry run, nothing written to databases or filesystem", NULL },
     { "flush",       0,                    0, G_OPTION_ARG_NONE,           &config.flushBetween,  "In offline mode flush streams between files", NULL },
     { "nospi",       0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE,           &config.noSPI,         "no SPI data written to ES", NULL },
     { "tests",       0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE,           &config.tests,         "Output test suite information", NULL },
@@ -118,7 +122,7 @@ void parse_args(int argc, char **argv)
         config.configFile = g_strdup("/data/moloch/etc/config.ini");
 
     if (showVersion) {
-        printf("moloch-capture %s session size=%zd packet size=%zd\n", PACKAGE_VERSION, sizeof(MolochSession_t), sizeof(MolochPacket_t));
+        printf("moloch-capture %s/%s session size=%zd packet size=%zd\n", PACKAGE_VERSION, BUILD_VERSION, sizeof(MolochSession_t), sizeof(MolochPacket_t));
         printf("glib2: %u.%u.%u\n", glib_major_version, glib_minor_version, glib_micro_version);
         printf("libpcap: %s\n", pcap_lib_version());
         printf("curl: %s\n", curl_version());
