@@ -3,6 +3,8 @@ dist: "trusty"
 branches:
   only:
   - /autobuild-.*/
+install:
+  - cd $TRAVIS_REPO_SLUG ; git fetch --tags --all
 env:
   global:
   - yara_version=1.7
