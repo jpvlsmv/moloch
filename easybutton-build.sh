@@ -89,7 +89,7 @@ cd thirdparty || exit
 PWD=`pwd`
 
 # glib
-if [ "$(uname)" = "FreeBSD" ]; then
+if [ "$(uname)" == "FreeBSD" ]; then
   #Screw it, use whatever the OS has
   WITHGLIB=" "
 else
@@ -221,39 +221,9 @@ fi
 
 
 # Now build moloch
-echo "MOLOCH: Building capture"
-cd ..
-echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA"
-./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA
-
-if [ $DOCLEAN -eq 1 ]; then
-    $MAKE clean
-fi
-
-$MAKE
-if [ $? -ne 0 ]; then
-  echo "MOLOCH: $MAKE failed"
-  exit 1
-fi
-
-(cd capture/plugins/lua; $MAKE)
-if [ $DOPFRING -eq 1 ]; then
-    (cd capture/plugins/pfring; $MAKE)
-fi
-
-if [ $DODAQ -eq 1 ]; then
-    (cd capture/plugins/daq; $MAKE)
-fi
-
-if [ -f "/opt/snf/lib/libsnf.so" ]; then
-    (cd capture/plugins/snf; $MAKE)
-fi
-
-if [ -f "/usr/local/lib/libpfring.so" ]; then
-    (cd capture/plugins/pfring; $MAKE)
-fi
-
-
-echo "Now type 'sudo make install' and 'sudo make config'"
-
+#echo "MOLOCH: Building capture"
+#cd ..
+#echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL"
+#./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL
+#
 exit 0

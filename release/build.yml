@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 ---
 # Requires running: sudo ansible-galaxy install rvm_io.ruby
+=======
+# Requires running: ansible-galaxy install -p `pwd`/roles rvm_io.ruby
+# and set ANSIBLE_ROLES_PATH=`pwd`/roles
+>>>>>>> autobuild
 # NOTE: Vagrant 1.9.0 works, 1.9.2 has issues on some platforms
 # vagrant up
 # To rebuild either: vagrant provision
@@ -9,6 +14,7 @@
   become: true
   become_method: sudo
   vars:
+<<<<<<< HEAD
     - node_version: 4.8.1
     - rvm1_rubies:
       - ruby-1.9.3
@@ -20,6 +26,23 @@
     - fpm_url: "http://molo.ch"
     - fpm_description: "Moloch Full Packet System"
     - iteration: 1
+=======
+    - yara_version: 1.7  # CONFLICTOR
+    - geoip_version: 1.6.9  # CONFLICTOR
+    - pcap_version: 1.8.1  # CONFLICTOR
+    - curl_version: 7.52.1  # CONFLICTOR
+    - glib2_dir: "2.50"  # CONFLICTOR
+    - glib2_version: 2.50.2  # CONFLICTOR
+    - node_version: 4.6.2  # CONFLICTOR
+    - daq_version: 2.0.6  # CONFLICTOR
+    - lua_version: 5.3.3  # CONFLICTOR
+    - rvm1_rubies:  # CONFLICTOR
+      - ruby-1.9.3  # CONFLICTOR
+    - moloch_name: moloch  # CONFLICTOR
+    - fpm_url: "http://molo.ch"  # CONFLICTOR
+    - fpm_description: "Moloch Full Packet System"  # CONFLICTOR
+    - iteration: 1  # CONFLICTOR
+>>>>>>> autobuild
 
 # Tasks before roles install software
   pre_tasks:
@@ -55,6 +78,10 @@
             - unzip
             - xz
             - pfring
+            - ruby
+            - ruby-devel
+            - rubygems
+            - readline-devel
 
       # Block end
       when: ansible_distribution=='CentOS'
@@ -69,6 +96,8 @@
           with_items:
             - git
             - pfring
+            - ruby
+            - ruby-dev
 
       # Block end
       when: ansible_distribution == 'Ubuntu'
@@ -79,13 +108,23 @@
 
 # Install ruby
   roles:
+<<<<<<< HEAD
     - {role: rvm_io.ruby}
+=======
+    - {role: rvm_io.ruby,
+      when: ansible_distribution == "CentOS" and ansible_distribution_major_version == "6"
+      }
+>>>>>>> autobuild
 
 # Tasks after roles
   tasks:
-    - name: install fpm
-      gem: name=fpm user_install=no state=latest executable=/usr/local/bin/gem
+    - name: install fpm from /usr/bin
+      gem: name=fpm user_install=no state=latest executable='/usr/bin/gem'
+      when: not ( ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" )
 
+    - name: install fpm from RVM's area
+      gem: name=fpm user_install=no state=latest executable='/usr/local/rvm/rubies/ruby-1.9.3-p551/lib/ruby/gems/1.9.1/wrappers/gem'
+      when:     ( ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" )
 
 # Prepare prereqs
     - name: Download Packages
@@ -176,7 +215,7 @@
         shell: bash -lc "{{item}}"
         become: false
         with_items:
-          - fpm -s dir -t rpm -n {{moloch_name}} -v {{moloch_version}} --iteration {{iteration}} --template-scripts --after-install "{{moloch_name}}/release/afterinstall.sh" --url \"{{fpm_url}}\" --description \"{{fpm_description}}\" -d perl-libwww-perl -d perl-JSON -d ethtool /data/{{moloch_name}}
+          - /usr/bin/env fpm -s dir -t rpm -n {{moloch_name}} -v {{moloch_version}} --iteration {{iteration}} --template-scripts --after-install "{{moloch_name}}/release/afterinstall.sh" --url \"{{fpm_url}}\" --description \"{{fpm_description}}\" -d perl-libwww-perl -d perl-JSON -d ethtool /data/{{moloch_name}}
 
       - name: copy centos back
         fetch: src={{moloch_name}}-{{moloch_version}}-{{iteration}}.x86_64.rpm dest=./builds
