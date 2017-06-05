@@ -2077,14 +2077,16 @@ if ($ARGV[1] =~ /^users-?import$/) {
     optimizeOther();
     printf ("Expiring %s indices, optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), commify($optimizecnt));
     foreach my $i (sort (keys %{$indices})) {
+        # Loop through indexes and delete the expired/dead
         if (not exists $indices->{$i}->{STILLALIVE}) {
             esDelete("/$i", 1);
-            progress("deleted");
+            progress("$i deleted");
         }
     }
     foreach my $i (sort (keys %{$indices})) {
-        progress("$i ");
+        # Loop through indexes again looking for live indexes
         if (exists $indices->{$i}->{STILLALIVE}) {
+          progress("$i ");
           if ($REPLICAS != -1) {
               progress("setting replicas ");
               esGet("/$i/_flush", 1);
@@ -2095,10 +2097,6 @@ if ($ARGV[1] =~ /^users-?import$/) {
               esGet("/$i/$main::OPTIMIZE?max_num_segments=4", 1);
           }
           progress("done\n");
-        }
-        else {
-            esDelete("/$i", 1);
-            progress("deleted");
         }
     }
     exit 0;
