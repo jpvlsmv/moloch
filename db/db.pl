@@ -55,6 +55,7 @@ my $PREFIX = "";
 my $NOCHANGES = 0;
 my $SHARDS = -1;
 my $REPLICAS = -1;
+my $NOOPTIMIZE = -1;
 
 ################################################################################
 sub MIN ($$) { $_[$_[0] > $_[1]] }
@@ -100,6 +101,7 @@ sub showHelp($)
     print "       type                    - Same as rotateIndex in ini file = hourly,daily,weekly,monthly\n";
     print "       num                     - number of indexes to keep\n";
     print "    --replicas <num>           - Number of replicas for older sessions indices, default 0\n";
+    print "    --nooptimize               - Do not optimize session indexes at this time\n";
     print "  field disable <exp>          - disable a field from being indexed\n";
     print "  field enable <exp>           - enable a field from being indexed\n";
     exit 1;
@@ -1978,6 +1980,8 @@ sub parseArgs {
         } elsif ($ARGV[$pos] eq "--replicas") {
             $pos++;
             $REPLICAS = int($ARGV[$pos]);
+        } elsif ($ARGV[$pos] eq "--nooptimize") {
+            $NOOPTIMIZE = 1;
         } else {
             print "Unknown option '", $ARGV[$pos], "'\n";
         }
@@ -2058,7 +2062,7 @@ if ($ARGV[1] =~ /^users-?import$/) {
     while ($startTime <= $endTime) {
         my $iname = time2index($ARGV[2], $startTime);
         if (exists $indices->{$iname}) {
-            $indices->{$iname}->{OPTIMIZEIT} = 1;
+            $indices->{$iname}->{STILLALIVE} = 1;
             $optimizecnt++;
         }
         if ($ARGV[2] eq "hourly") {
@@ -2073,15 +2077,28 @@ if ($ARGV[1] =~ /^users-?import$/) {
     optimizeOther();
     printf ("Expiring %s indices, optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), commify($optimizecnt));
     foreach my $i (sort (keys %{$indices})) {
-        progress("$i ");
-        if (exists $indices->{$i}->{OPTIMIZEIT}) {
-            esGet("/$i/$main::OPTIMIZE?max_num_segments=4", 1);
-            if ($REPLICAS != -1) {
-                esGet("/$i/_flush", 1);
-                esPut("/$i/_settings", '{index: {"number_of_replicas":' . $REPLICAS . '}}', 1);
-            }
-        } else {
+        if (not exists $indices->{$i}->{STILLALIVE}) {
             esDelete("/$i", 1);
+            progress("deleted");
+        }
+    }
+    foreach my $i (sort (keys %{$indices})) {
+        progress("$i ");
+        if (exists $indices->{$i}->{STILLALIVE}) {
+          if ($REPLICAS != -1) {
+              progress("setting replicas ");
+              esGet("/$i/_flush", 1);
+              esPut("/$i/_settings", '{index: {"number_of_replicas":' . $REPLICAS . '}}', 1);
+          }
+          if ($NOOPTIMIZE != -1) {
+              progress("optimizing ");
+              esGet("/$i/$main::OPTIMIZE?max_num_segments=4", 1);
+          }
+          progress("done\n");
+        }
+        else {
+            esDelete("/$i", 1);
+            progress("deleted");
         }
     }
     exit 0;
