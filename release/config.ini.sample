@@ -260,13 +260,13 @@ antiSynDrop = true
 
 # DEBUG - Write to stdout info every X packets.
 # Set to -1 to never log status
-logEveryXPackets = 100000
+logEveryXPackets = -1
 
 # DEBUG - Write to stdout unknown protocols
 logUnknownProtocols = false
 
 # DEBUG - Write to stdout elastic search requests
-logESRequests = true
+logESRequests = false
 
 # DEBUG - Write to stdout file creation information
 logFileCreation = true
