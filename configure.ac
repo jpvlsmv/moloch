@@ -1,7 +1,8 @@
-AC_INIT([moloch], m4_esyscmd([git describe --tags --match 'v*'])
+AC_INIT([moloch], [0.19.2-GIT])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AC_PROG_CC
 AC_PROG_CXX
+AC_CHECK_TOOL([GIT],[git],[:])
 AC_CONFIG_HEADERS([capture/molochconfig.h])
 AC_PREFIX_DEFAULT(["/data/moloch"])
 AC_CHECK_HEADERS([sys/inotify.h])
@@ -18,6 +19,7 @@ AC_CONFIG_FILES([
   tests/plugins/Makefile
   viewer/Makefile
   viewer/version.js
+  release/Makefile
 ])
 
 AC_CHECK_LIB(pcre, main,,AC_MSG_ERROR(please install PCRE library))

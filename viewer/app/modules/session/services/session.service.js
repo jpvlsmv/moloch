@@ -16,14 +16,16 @@
      * @param $window   Angular reference to the browser's window object
      * @param $location Exposes browser address bar URL
      *                  (based on the window.location)
+     * @param $httpParamSerializer Converts objects to strings
      *
      * @ngInject
      */
-    constructor($q, $http, $window, $location) {
-      this.$q         = $q;
-      this.$http      = $http;
-      this.$window    = $window;
-      this.$location  = $location;
+    constructor($q, $http, $window, $location, $httpParamSerializer) {
+      this.$q                   = $q;
+      this.$http                = $http;
+      this.$window              = $window;
+      this.$location            = $location;
+      this.$httpParamSerializer = $httpParamSerializer;
     }
 
 
@@ -97,48 +99,51 @@
     }
 
     /**
-     * Gets info about the session table columns and sorting order
+     * Gets a state
+     * @param {string} name       The name of the state to get
      * @returns {Promise} Promise A promise object that signals the completion
      *                            or rejection of the request.
      */
-    getTableState() {
+    getState(name) {
       return this.$q((resolve, reject) => {
 
         let options = {
-          url   : 'tableState/sessionsNew',
+          url   : `state/${name}`,
           method: 'GET'
         };
 
         this.$http(options)
-          .then((response) => {
-            resolve(response);
-          }, (error) => {
-            reject(error);
-          });
+           .then((response) => {
+             resolve(response);
+           }, (error) => {
+             reject(error);
+           });
 
       });
     }
 
     /**
-     * Saves info about the session table columns and sorting order
+     * Saves a state
+     * @param {object} state      The object to save as the state
+     * @param {string} name       The name of the state to save
      * @returns {Promise} Promise A promise object that signals the completion
      *                            or rejection of the request.
      */
-    saveTableState(tableState) {
+    saveState(state, name) {
       return this.$q((resolve, reject) => {
 
         let options = {
-          url   : 'tableState/sessionsNew',
+          url   : `state/${name}`,
           method: 'POST',
-          data  : tableState
+          data  : state
         };
 
         this.$http(options)
-          .then((response) => {
-            resolve(response);
-          }, (error) => {
-            reject(error);
-          });
+           .then((response) => {
+             resolve(response);
+           }, (error) => {
+             reject(error);
+           });
 
       });
     }
@@ -215,8 +220,7 @@
     addTags(params) {
       return this.$q((resolve, reject) => {
 
-        let options = SessionService
-           .getReqOptions('addTags', 'POST', params, this.$location.search());
+        let options = this.getReqOptions('addTags', 'POST', params);
 
         // add tag data
         options.data.tags = params.tags;
@@ -240,8 +244,7 @@
     removeTags(params) {
       return this.$q((resolve, reject) => {
 
-        let options = SessionService
-           .getReqOptions('removeTags', 'POST', params, this.$location.search());
+        let options = this.getReqOptions('removeTags', 'POST', params);
 
         // add tag data
         options.data.tags = params.tags;
@@ -263,8 +266,7 @@
     exportPCAP(params) {
       let baseUrl = `sessions.pcap/${params.filename}`;
 
-      let options = SessionService
-         .getReqOptions(baseUrl, '', params, this.$location.search());
+      let options = this.getReqOptions(baseUrl, '', params);
 
       let url = options.url;
 
@@ -282,14 +284,18 @@
     exportCSV(params) {
       let baseUrl = `sessions.csv/${params.filename}`;
 
-      let options = SessionService
-         .getReqOptions(baseUrl, '', params, this.$location.search());
+      let options = this.getReqOptions(baseUrl, '', params);
 
       let url = options.url;
 
       if (options.data.ids) {  url += `&ids=${options.data.ids}`; }
 
       url += `&segments=${params.segments}`;
+
+      if (params.fields && params.fields.length) {
+        let fields = params.fields.join(',');
+        url += `&fields=${fields}`;
+      }
 
       this.$window.location = url;
     }
@@ -303,14 +309,13 @@
     scrubPCAP(params) {
       return this.$q((resolve, reject) => {
 
-        let options = SessionService
-           .getReqOptions('scrub', 'POST', params, this.$location.search());
+        let options = this.getReqOptions('scrub', 'POST', params);
 
         this.$http(options)
           .then((response) => {
             resolve(response);
           }, (error) => {
-            reject(error);
+            reject(error.data);
           });
 
       });
@@ -325,14 +330,13 @@
     remove(params) {
       return this.$q((resolve, reject) => {
 
-        let options = SessionService
-           .getReqOptions('delete', 'POST', params, this.$location.search());
+        let options = this.getReqOptions('delete', 'POST', params);
 
         this.$http(options)
           .then((response) => {
             resolve(response);
           }, (error) => {
-            reject(error);
+            reject(error.data);
           });
 
       });
@@ -347,8 +351,7 @@
     send(params) {
       return this.$q((resolve, reject) => {
 
-        let options = SessionService
-           .getReqOptions('sendSessions', 'POST', params, this.$location.search());
+        let options = this.getReqOptions('sendSessions', 'POST', params);
 
         // add tag and cluster data
         options.data.tags     = params.tags;
@@ -366,15 +369,21 @@
 
     /**
      * Open a new page to view unique values for different fields
-     * @param {string} dbField  The field to get unique values for
-     * @param {number} counts   1 or 0 whether to include counts of the values
+     * @param {string} exp    The field to get unique values for
+     * @param {number} counts 1 or 0 whether to include counts of the values
      */
-    exportUniqueValues(dbField, counts) {
+    exportUniqueValues(exp, counts) {
       let url = 'unique.txt';
 
-      url = SessionService.urlWithParams(url, this.$location.search());
+      let paramObj    = this.getRouteParams();
+      paramObj.counts = counts;
+      paramObj.exp    = exp;
 
-      url += `&field=${dbField}&counts=${counts}`;
+      let paramString = this.getParamString(paramObj);
+
+      if (paramString && paramString !== '') {
+        url += `?${paramString}`;
+      }
 
       this.$window.open(url, '_blank');
     }
@@ -386,33 +395,63 @@
     openSpiGraph(dbField) {
       let url = 'spigraph';
 
-      url = SessionService.urlWithParams(url, this.$location.search());
+      let paramObj    = this.getRouteParams();
+      paramObj.field  = dbField;
 
-      url += `&field=${dbField}`;
+      let paramString = this.getParamString(paramObj);
+
+      if (paramString && paramString !== '') {
+        url += `?${paramString}`;
+      }
 
       this.$window.open(url, '_blank');
+    }
+
+    /**
+     * Gets other decodings for session pcap data
+     * @returns {Promise} Promise A promise object that signals the completion
+     *                            or rejection of the request.
+     */
+    getDecodings() {
+      return this.$q((resolve, reject) => {
+
+        let options = { url:'decodings', method:'GET', cache:true };
+
+        this.$http(options)
+          .then((response) => {
+            resolve(response.data);
+          }, (error) => {
+            reject(error);
+          });
+
+      });
     }
 
 
     /* internal functions -------------------------------------------------- */
     /**
-     * Adds date and expression parameters to a given base url without parameters
-     * @param {string} baseUrl The url (without params) to append the params to
-     * @param {Object} params  The params object where date params may exist
+     * Gets the string representation of a object containing url parameters
+     * @param {Object} paramsObj The params object to stringify
      */
-    static urlWithParams(baseUrl, params) {
-      if (params.date) {
-        baseUrl += '?date=' + params.date;
-      } else if (params.startTime && params.stopTime) {
-        baseUrl += '?startTime='  + params.startTime;
-        baseUrl += '&stopTime='   + params.stopTime;
+    getParamString(paramsObj) {
+      return this.$httpParamSerializer(paramsObj);
+    }
+
+    /**
+     * Clones the existing object containing the route parameters
+     * Uses $location.search()
+     * @returns {Object} paramObj Key, value pairs describing the route params
+     */
+    getRouteParams() {
+      let paramObj = {};
+
+      for (let param in this.$location.search()) {
+        if (this.$location.search().hasOwnProperty(param)) {
+          paramObj[param] = this.$location.search()[param];
+        }
       }
 
-      if (params.expression) {
-        baseUrl += '&expression=' + encodeURIComponent(params.expression);
-      }
-
-      return baseUrl;
+      return paramObj;
     }
 
     /**
@@ -420,12 +459,12 @@
      * @param {string} baseUrl        The base url to append params to
      * @param {string} method         The HTTP method (POST, GET, PUT, DELETE, etc)
      * @param {object} params         The parameters to be applied to url or data
-     * @param {object} existingParams The parameters existing in the url bar
      * @returns { url: {string}, method: {string}, data: {object} }
      */
-    static getReqOptions(baseUrl, method, params, existingParams) {
-      let data  = { segments: params.segments };
-      let url   = SessionService.urlWithParams(baseUrl, existingParams);
+    getReqOptions(baseUrl, method, params) {
+      let data      = { segments: params.segments };
+      let url       = baseUrl;
+      let paramObj  = this.getRouteParams();
 
       if (!params.applyTo || params.applyTo === 'open') {
         // specific sessions
@@ -436,11 +475,18 @@
         data.ids = data.ids.join(',');
       } else if (params.applyTo === 'visible') {
         // sessions on the open page
-        url += '&start='  + params.start;
-        url += '&length=' + params.numVisible;
+        paramObj.start  = params.start;
+        paramObj.length = params.numVisible;
       } else if (params.applyTo === 'matching') {
         // all sessions in query results
-        url += '&start=0&length=' + params.numMatching;
+        paramObj.start  = 0;
+        paramObj.length = params.numMatching;
+      }
+
+      let paramString = this.getParamString(paramObj);
+
+      if (paramString && paramString !== '') {
+        url += `?${paramString}`;
       }
 
       return { url:url, method:method, data:data };
@@ -449,7 +495,8 @@
   }
 
 
-  SessionService.$inject = ['$q', '$http', '$window', '$location'];
+  SessionService.$inject = ['$q','$http','$window','$location',
+    '$httpParamSerializer'];
 
 
   angular.module('moloch')

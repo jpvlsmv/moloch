@@ -29,6 +29,10 @@
 #include "pcap.h"
 #include "molochconfig.h"
 
+#ifndef BUILD_VERSION
+#define BUILD_VERSION "unkn"
+#endif
+
 /******************************************************************************/
 MolochConfig_t         config;
 extern void           *esServer;
@@ -38,6 +42,7 @@ unsigned char          moloch_char_to_hexstr[256][3];
 unsigned char          moloch_hex_to_char[256][256];
 
 extern MolochWriterQueueLength moloch_writer_queue_length;
+extern MolochPcapFileHdr_t     pcapFileHeader;
 
 MOLOCH_LOCK_DEFINE(LOG);
 
@@ -68,7 +73,7 @@ static GOptionEntry entries[] =
     { "debug",     'd', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK,       moloch_debug_flag,     "Turn on all debugging", NULL },
     { "quiet",     'q',                    0, G_OPTION_ARG_NONE,           &config.quiet,         "Turn off regular logging", NULL },
     { "copy",        0,                    0, G_OPTION_ARG_NONE,           &config.copyPcap,      "When in offline mode copy the pcap files into the pcapDir from the config file", NULL },
-    { "dryrun",      0,                    0, G_OPTION_ARG_NONE,           &config.dryRun,        "dry run, noting written to databases or filesystem", NULL },
+    { "dryrun",      0,                    0, G_OPTION_ARG_NONE,           &config.dryRun,        "dry run, nothing written to databases or filesystem", NULL },
     { "flush",       0,                    0, G_OPTION_ARG_NONE,           &config.flushBetween,  "In offline mode flush streams between files", NULL },
     { "nospi",       0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE,           &config.noSPI,         "no SPI data written to ES", NULL },
     { "tests",       0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_NONE,           &config.tests,         "Output test suite information", NULL },
@@ -118,7 +123,7 @@ void parse_args(int argc, char **argv)
         config.configFile = g_strdup("/data/moloch/etc/config.ini");
 
     if (showVersion) {
-        printf("moloch-capture %s session size=%zd packet size=%zd\n", PACKAGE_VERSION, sizeof(MolochSession_t), sizeof(MolochPacket_t));
+        printf("moloch-capture %s/%s session size=%zd packet size=%zd\n", PACKAGE_VERSION, BUILD_VERSION, sizeof(MolochSession_t), sizeof(MolochPacket_t));
         printf("glib2: %u.%u.%u\n", glib_major_version, glib_minor_version, glib_micro_version);
         printf("libpcap: %s\n", pcap_lib_version());
         printf("curl: %s\n", curl_version());
@@ -415,13 +420,11 @@ void moloch_drop_privileges()
         struct group   *grp;
         grp = getgrnam(config.dropGroup);
         if (!grp) {
-            LOG("ERROR: Group '%s' not found", config.dropGroup);
-            exit(1);
+            LOGEXIT("ERROR: Group '%s' not found", config.dropGroup);
         }
 
         if (setgid(grp->gr_gid) != 0) {
-            LOG("ERROR: Couldn't change group - %s", strerror(errno));
-            exit(1);
+            LOGEXIT("ERROR: Couldn't change group - %s", strerror(errno));
         }
     }
 
@@ -429,13 +432,11 @@ void moloch_drop_privileges()
         struct passwd   *usr;
         usr = getpwnam(config.dropUser);
         if (!usr) {
-            LOG("ERROR: User '%s' not found", config.dropUser);
-            exit(1);
+            LOGEXIT("ERROR: User '%s' not found", config.dropUser);
         }
 
         if (setuid(usr->pw_uid) != 0) {
-            LOG("ERROR: Couldn't change user - %s", strerror(errno));
-            exit(1);
+            LOGEXIT("ERROR: Couldn't change user - %s", strerror(errno));
         }
     }
 
@@ -449,8 +450,7 @@ int                       canQuitFuncsNum;
 void moloch_add_can_quit (MolochCanQuitFunc func, const char *name)
 {
     if (canQuitFuncsNum >= 20) {
-        LOG("Can't add canQuitFunc");
-        exit(1);
+        LOGEXIT("Can't add canQuitFunc");
         return;
     }
     canQuitFuncs[canQuitFuncsNum] = func;
@@ -465,11 +465,12 @@ void moloch_add_can_quit (MolochCanQuitFunc func, const char *name)
  */
 gboolean moloch_quit_gfunc (gpointer UNUSED(user_data))
 {
-static gboolean firstRun   = TRUE;
+static gboolean readerExit   = TRUE;
+static gboolean writerExit   = TRUE;
 
-// On the first run shutdown reader and stuff
-    if (firstRun) {
-        firstRun = FALSE;
+// On the first run shutdown reader and sessions
+    if (readerExit) {
+        readerExit = FALSE;
         if (moloch_reader_stop)
             moloch_reader_stop();
         moloch_readers_exit();
@@ -478,6 +479,7 @@ static gboolean firstRun   = TRUE;
         return TRUE;
     }
 
+// Wait for all the can quits to signal all clear
     int i;
     for (i = 0; i < canQuitFuncsNum; i++) {
         int val = canQuitFuncs[i]();
@@ -489,6 +491,16 @@ static gboolean firstRun   = TRUE;
         }
     }
 
+// Once all clear stop the writer and wait for all clears again
+    if (writerExit) {
+        writerExit = FALSE;
+        if (!config.dryRun && config.copyPcap) {
+            moloch_writer_exit();
+            return TRUE;
+        }
+    }
+
+// Can quit the main loop now
     g_main_loop_quit(mainLoop);
     return FALSE;
 }
@@ -527,6 +539,8 @@ gboolean moloch_ready_gfunc (gpointer UNUSED(user_data))
         }
     }
     moloch_reader_start();
+    if (pcapFileHeader.linktype == 0 || pcapFileHeader.snaplen == 0)
+        LOGEXIT("Reader didn't call moloch_packet_set_linksnap");
     return FALSE;
 }
 /******************************************************************************/
@@ -627,6 +641,7 @@ int main(int argc, char **argv)
     moloch_parsers_init();
     moloch_session_init();
     moloch_plugins_load(config.plugins);
+    moloch_rules_init();
     g_timeout_add(1, moloch_ready_gfunc, 0);
 
     g_main_loop_run(mainLoop);
@@ -634,18 +649,14 @@ int main(int argc, char **argv)
     LOG("Final cleanup");
     moloch_plugins_exit();
     moloch_parsers_exit();
-    moloch_yara_exit();
     moloch_db_exit();
     moloch_http_exit();
     moloch_field_exit();
     moloch_config_exit();
+    moloch_rules_exit();
+    moloch_yara_exit();
 
     g_main_loop_unref(mainLoop);
-
-    if (!config.dryRun && config.copyPcap) {
-        moloch_writer_exit();
-    }
-
 
     free_args();
     exit(0);

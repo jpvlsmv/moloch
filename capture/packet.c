@@ -1,6 +1,6 @@
 /* packet.c  -- Functions for acquiring data
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -45,6 +45,7 @@ LOCAL int                    greIpField;
 LOCAL uint64_t               droppedFrags;
 
 time_t                       lastPacketSecs[MOLOCH_MAX_PACKET_THREADS];
+int                          inProgress[MOLOCH_MAX_PACKET_THREADS];
 
 LOCAL patricia_tree_t       *ipTree = 0;
 
@@ -55,9 +56,6 @@ LOCAL  MolochPacketHead_t    packetQ[MOLOCH_MAX_PACKET_THREADS];
 LOCAL  uint32_t              overloadDrops[MOLOCH_MAX_PACKET_THREADS];
 
 MOLOCH_LOCK_DEFINE(frags);
-
-LOCAL  gboolean              callFilters;
-
 
 int moloch_packet_ip4(MolochPacketBatch_t * batch, MolochPacket_t * const packet, const uint8_t *data, int len);
 
@@ -204,8 +202,11 @@ void moloch_packet_process_udp(MolochSession_t * const session, MolochPacket_t *
         session->firstBytesLen[packet->direction] = MIN(8, len);
         memcpy(session->firstBytes[packet->direction], data, session->firstBytesLen[packet->direction]);
 
-        if (!session->stopSPI)
-            moloch_parsers_classify_udp(session, data, len, packet->direction);
+        moloch_parsers_classify_udp(session, data, len, packet->direction);
+
+        if (config.yara) {
+            moloch_yara_execute(session, data, len, 0);
+        }
     }
 
     int i;
@@ -218,7 +219,7 @@ void moloch_packet_process_udp(MolochSession_t * const session, MolochPacket_t *
 /******************************************************************************/
 int moloch_packet_process_tcp(MolochSession_t * const session, MolochPacket_t * const packet)
 {
-    if (session->stopSPI || session->stopTCP)
+    if (session->stopTCP)
         return 1;
 
     struct tcphdr       *tcphdr = (struct tcphdr *)(packet->pkt + packet->payloadOffset);
@@ -432,6 +433,7 @@ LOCAL void *moloch_packet_thread(void *threadp)
 
     while (1) {
         MOLOCH_LOCK(packetQ[thread].lock);
+        inProgress[thread] = 0;
         if (DLL_COUNT(packet_, &packetQ[thread]) == 0) {
             struct timeval tv;
             struct timespec ts;
@@ -440,6 +442,7 @@ LOCAL void *moloch_packet_thread(void *threadp)
             ts.tv_nsec = 0;
             MOLOCH_COND_TIMEDWAIT(packetQ[thread].lock, ts);
         }
+        inProgress[thread] = 1;
         DLL_POP_HEAD(packet_, &packetQ[thread], packet);
         MOLOCH_UNLOCK(packetQ[thread].lock);
 
@@ -542,7 +545,8 @@ LOCAL void *moloch_packet_thread(void *threadp)
                         LOG("Ignoring connection %s", moloch_session_id_string(session->sessionId, buf));
                     }
                     session->stopSPI = 1;
-                    session->stopSaving = 1;
+                    moloch_packet_free(packet);
+                    continue;
                 }
                 break;
             case IPPROTO_UDP:
@@ -555,6 +559,9 @@ LOCAL void *moloch_packet_thread(void *threadp)
 
             if (pluginsCbs & MOLOCH_PLUGIN_NEW)
                 moloch_plugins_cb_new(session);
+        } else if (session->stopSPI) {
+            moloch_packet_free(packet);
+            continue;
         }
 
         int dir;
@@ -588,17 +595,8 @@ LOCAL void *moloch_packet_thread(void *threadp)
         }
 
         /* Check if the stop saving bpf filters match */
-        if (session->packets[packet->direction] == 0 && session->stopSaving == 0 && callFilters) {
-            if (moloch_reader_should_filter) {
-                enum MolochFilterType type;
-                int index;
-                if (moloch_reader_should_filter(packet, &type, &index)) {
-                    if (type == MOLOCH_FILTER_DONT_SAVE)
-                        session->stopSaving = config.bpfsVal[type][index];
-                    else if (type == MOLOCH_FILTER_MIN_SAVE)
-                        session->minSaving = config.bpfsVal[type][index];
-                }
-            }
+        if (session->packets[packet->direction] == 0 && session->stopSaving == 0) {
+            moloch_rules_run_session_setup(session, packet);
         }
 
         session->packets[packet->direction]++;
@@ -1227,7 +1225,36 @@ int moloch_packet_ether(MolochPacketBatch_t * batch, MolochPacket_t * const pack
             return 1;
         } // switch
     }
-    return 0;
+    return 1;
+}
+/******************************************************************************/
+int moloch_packet_nflog(MolochPacketBatch_t * batch, MolochPacket_t * const packet, const uint8_t *data, int len)
+{
+    if (len < 14 ||
+        (data[0] != AF_INET && data[0] != AF_INET6) ||
+        data[1] != 0) {
+        return 1;
+    }
+    int n = 4;
+    while (n+4 < len) {
+        int length = data[n+1] << 8 | data[n];
+
+        // Make sure length is at least header and not bigger then remaining packet
+        if (length < 4 || length > len - n) {
+            return 1;
+        }
+
+        if (data[n+3] == 0 && data[n+2] == 9) {
+            if (data[0] == AF_INET) {
+                return moloch_packet_ip4(batch, packet, data+n+4, length - 4);
+            } else {
+                return moloch_packet_ip6(batch, packet, data+n+4, length - 4);
+            }
+        } else {
+            n += ((length + 3) & 0xfffffc);
+        }
+    }
+    return 1;
 }
 /******************************************************************************/
 void moloch_packet_batch_init(MolochPacketBatch_t *batch)
@@ -1273,15 +1300,16 @@ void moloch_packet_batch(MolochPacketBatch_t * batch, MolochPacket_t * const pac
     case 1: // Ether
         rc = moloch_packet_ether(batch, packet, packet->pkt, packet->pktlen);
         break;
-    case 12: // RAW
-        rc = moloch_packet_ip4(batch, packet, packet->pkt, packet->pktlen);
-        break;
+    case 12: // LOOP
+    case 101: // RAW
     case 113: // SLL
         rc = moloch_packet_ip4(batch, packet, packet->pkt, packet->pktlen);
         break;
+    case 239: // NFLOG
+        rc = moloch_packet_nflog(batch, packet, packet->pkt, packet->pktlen);
+        break;
     default:
-        LOG("ERROR - Unsupported pcap link type %d", pcapFileHeader.linktype);
-        exit (0);
+        LOGEXIT("ERROR - Unsupported pcap link type %d", pcapFileHeader.linktype);
     }
     if (rc) {
         moloch_packet_free(packet);
@@ -1295,6 +1323,7 @@ int moloch_packet_outstanding()
 
     for (t = 0; t < config.packetThreads; t++) {
         count += DLL_COUNT(packet_, &packetQ[t]);
+        count += inProgress[t];
     }
     return count;
 }
@@ -1318,8 +1347,6 @@ int moloch_packet_frag_cmp(const void *keyv, const void *elementv)
 /******************************************************************************/
 void moloch_packet_init()
 {
-    callFilters = config.bpfsNum[MOLOCH_FILTER_DONT_SAVE] || config.bpfsNum[MOLOCH_FILTER_MIN_SAVE];
-
     pcapFileHeader.magic = 0xa1b2c3d4;
     pcapFileHeader.version_major = 2;
     pcapFileHeader.version_minor = 4;
@@ -1467,6 +1494,13 @@ void moloch_packet_add_packet_ip(char *ipstr, int mode)
     }
     node = make_and_lookup(ipTree, ipstr);
     node->data = (void *)(long)mode;
+}
+/******************************************************************************/
+void moloch_packet_set_linksnap(int linktype, int snaplen)
+{
+    pcapFileHeader.linktype = linktype;
+    pcapFileHeader.snaplen = snaplen;
+    moloch_rules_recompile();
 }
 /******************************************************************************/
 void moloch_packet_exit()

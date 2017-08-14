@@ -1,12 +1,9 @@
 <div>
 
   <!-- page size -->
-  <select convert-to-number ng-model="$ctrl.length"
-    ng-change="$ctrl.change()" class="form-control page-select">
-    <option value="50">50 per page</option>
-    <option value="100">100 per page</option>
-    <option value="200">200 per page</option>
-    <option value="500">500 per page</option>
+  <select ng-model="$ctrl.length" ng-change="$ctrl.change()"
+    ng-options="option.value as option.label for option in $ctrl.options | orderBy: 'value'"
+    class="form-control page-select">
   </select> <!-- /page size -->
 
   <!-- pagination -->
@@ -20,7 +17,7 @@
   </ul> <!-- /pagination -->
 
   <!-- page info -->
-  <span class="pagination-info cursor-help" tooltip-placement="top"
+  <span class="pagination-info cursor-help" tooltip-placement="right"
     uib-tooltip="filtered from {{$ctrl.recordsTotal | number:0}} total entries">
     Showing {{$ctrl.start + 1}} - {{$ctrl.start + $ctrl.length}}
     of {{$ctrl.recordsFiltered | number:0}} entries

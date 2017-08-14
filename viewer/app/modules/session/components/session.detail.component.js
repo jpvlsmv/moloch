@@ -61,14 +61,13 @@
         .then((response) => {
           this.userSettings = response;
 
-          this.setParameters();
-          this.getPackets();
+          this.setUserParams();
+          this.getDecodings(); // IMPORTANT: kicks of packet request
         })
         .catch((error) => {
           // can't get user, so use defaults
           this.userSettings = defaultUserSettings;
-          // but still get the packets
-          this.getPackets();
+          this.getDecodings(); // IMPORTANT: kicks of packet request
         });
 
       this.getDetailData(); // get SPI data
@@ -102,10 +101,9 @@
       });
     }
 
-    /* sets the session detail query parameters based on user settings and
-       browser saved options */
-    setParameters() {
-      if (localStorage) { // display user and browser saved options
+    /* sets some of the session detail query parameters based on user settings */
+    setUserParams() {
+      if (localStorage && this.userSettings) { // display user saved options
         if (this.userSettings.detailFormat === 'last' && localStorage['moloch-base']) {
           this.$scope.params.base = localStorage['moloch-base'];
         } else if (this.userSettings.detailFormat) {
@@ -121,6 +119,13 @@
         } else if (this.userSettings.showTimestamps) {
           this.$scope.params.ts = this.userSettings.showTimestamps === 'on';
         }
+      }
+    }
+
+    /* sets some of the session detail query parameters based on browser saved
+     * options */
+    setBrowserParams() {
+      if (localStorage) { // display browser saved options
         if (localStorage['moloch-line']) {
           this.$scope.params.line = JSON.parse(localStorage['moloch-line']);
         }
@@ -130,11 +135,45 @@
         if (localStorage['moloch-image']) {
           this.$scope.params.image = JSON.parse(localStorage['moloch-image']);
         }
+        if (localStorage['moloch-decodings']) {
+          this.$scope.params.decode = JSON.parse(localStorage['moloch-decodings']);
+          for (let key in this.decodings) {
+            if (this.decodings.hasOwnProperty(key)) {
+              if (this.$scope.params.decode[key]) {
+                this.decodings[key].active = true;
+                for (let field in this.$scope.params.decode[key]) {
+                  for (let i = 0, len = this.decodings[key].fields.length; i < len; ++i) {
+                    if (this.decodings[key].fields[i].key === field) {
+                      this.decodings[key].fields[i].value = this.$scope.params.decode[key][field];
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
 
 
     /* exposed functions --------------------------------------------------- */
+    /* gets other decodings for packet data
+     * IMPORTANT: kicks of packet request */
+    getDecodings() {
+      this.SessionService.getDecodings()
+        .then((response) => {
+          this.decodings = response;
+
+          this.setBrowserParams();
+          this.getPackets();
+        })
+        .catch(() => {
+          this.setBrowserParams();
+          // still get the packets
+          this.getPackets();
+        });
+    }
+
     /**
      * Gets the session detail from the server
      * @param {string} message An optional message to display to the user
@@ -249,6 +288,81 @@
       this.errorPackets   = 'Request canceled.';
     }
 
+    /* other decodings */
+    /**
+     * Toggles a decoding on or off
+     * If a decoding needs more input, shows form
+     * @param {string} key Identifier of the decoding to toggle
+     */
+    toggleDecoding(key) {
+      let decoding = this.decodings[key];
+
+      decoding.active = !decoding.active;
+
+      if (decoding.fields && decoding.active) {
+        this.decodingForm = key;
+      } else {
+        this.decodingForm = false;
+        this.applyDecoding(key);
+      }
+    }
+
+    /**
+     * Closes the form for additional decoding input
+     * @param {bool} active The active state of the decoding
+     */
+    closeDecodingForm(active) {
+      if (this.decodingForm) {
+        this.decodings[this.decodingForm].active = active;
+      }
+
+      this.decodingForm = false;
+    }
+
+    /**
+     * Sets the decode param, issues query, and closes form if necessary
+     * @param {key} key Identifier of the decoding to apply
+     */
+    applyDecoding(key) {
+      this.$scope.params.decode[key] = {};
+      let decoding = this.decodings[key];
+
+      if (decoding.active) {
+        if (decoding.fields) {
+          for (let i = 0, len = decoding.fields.length; i < len; ++i) {
+            let field = decoding.fields[i];
+            this.$scope.params.decode[key][field.key] = field.value;
+          }
+        }
+      } else {
+        this.$scope.params.decode[key] = null;
+        delete this.$scope.params.decode[key];
+      }
+
+      this.getPackets();
+      this.closeDecodingForm(decoding.active);
+
+      // update local storage
+      localStorage['moloch-decodings'] = JSON.stringify(this.$scope.params.decode);
+    }
+
+    /**
+     * Opens a new browser tab containing all the unique values for a given field
+     * @param {string} fieldID  The field id to display unique values for
+     * @param {int} counts      Whether to display the unique values with counts (1 or 0)
+     */
+    exportUnique(fieldID, counts) {
+      this.SessionService.exportUniqueValues(fieldID, counts);
+    }
+
+    /**
+     * Opens the spi graph page in a new browser tab
+     * @param {string} fieldID The field id (dbField) to display spi graph data for
+     */
+    openSpiGraph(fieldID) {
+      this.SessionService.openSpiGraph(fieldID);
+    }
+
   }
 
   SessionDetailController.$inject = ['$sce','$scope','$sanitize','$routeParams',
@@ -256,14 +370,16 @@
 
 
   angular.module('moloch')
-    .directive('sessionDetail', ['$timeout', '$filter', '$compile', '$routeParams',
-    function($timeout, $filter, $compile, $routeParams) {
+    .directive('sessionDetail',
+    ['$timeout','$filter','$compile','$routeParams','$location','$route',
+    function($timeout, $filter, $compile, $routeParams, $location, $route) {
       return {
         template    : require('html!../templates/session.detail.html'),
         controller  : SessionDetailController,
         controllerAs: '$ctrl',
         scope       : { session: '=' },
         link        : function SessionDetailLink(scope, element, attrs, ctrl) {
+          let timeout;
 
           /* exposed functions --------------------------------------------- */
           let formHTMLs = {
@@ -307,7 +423,7 @@
           };
 
           scope.displayMessage = function(message) {
-            $timeout(function() { // timeout to wait for detail to render
+            timeout = $timeout(function() { // timeout to wait for detail to render
               // display a message to the user (overrides form)
               let formContainer = element.find('.form-container');
               let html = `<div class="form-container">
@@ -323,6 +439,13 @@
             element.find('.form-container').hide();
           };
 
+          scope.openPermalink = function() {
+            $location.path('sessions')
+              .search('expression', `id=${scope.session.id}`)
+              .search('startTime', scope.session.fp)
+              .search('stopTime', scope.session.lp)
+              .search('openAll', 1);
+          };
 
           /**
            * Renders the session detail html
@@ -339,7 +462,7 @@
             let compiled = $compile(template)(scope);
             element.find('.detail-container').replaceWith(compiled);
 
-            $timeout(function() { // wait until session detail is rendered
+            timeout = $timeout(function() { // wait until session detail is rendered
               let i, len, time, value, timeEl;
 
               // display session actions dropdown
@@ -354,10 +477,16 @@
           
           scope.renderPackets = function() {
             // render session packets (don't compile!)
+            // if there are lots of packets, rendering could take a while
+            // so display a message (the user cannot cancel this action)
+            scope.renderingPackets = true;
+
             let template = `<div class="inner">${scope.packetHtml}</div>`;
             element.find('.packet-container > .inner').replaceWith(template);
 
-            $timeout(function() { // wait until session packets are rendered
+            timeout = $timeout(function() { // wait until session packets are rendered
+              scope.renderingPackets = false;
+
               let i, len, time, value, timeEl;
 
               // modify the packet timestamp values
@@ -410,6 +539,13 @@
                 $(imgs[i]).tooltip('destroy');
               }
             }
+
+            // cancel server request for packets
+            if (ctrl.packetPromise) { ctrl.cancelPacketLoad(); }
+
+            if (timeout) { $timeout.cancel(timeout); }
+
+            element.remove();
           });
 
         }

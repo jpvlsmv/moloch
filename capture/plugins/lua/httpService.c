@@ -1,6 +1,6 @@
 /* httpService.c  -- lua interface to http.c
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -61,7 +61,7 @@ static int MHS_new(lua_State *L)
         return luaL_error(L, "usage: <hosts:ports> <maxConnections> <maxRequests>");
     }
 
-    void *server = moloch_http_create_server(lua_tostring(L, 1), 80, lua_tointeger(L, 2), lua_tointeger(L, 3), 0);
+    void *server = moloch_http_create_server(lua_tostring(L, 1), lua_tointeger(L, 2), lua_tointeger(L, 3), 0);
     pushMHS(L, server);
     return 1;
 }
@@ -76,8 +76,7 @@ static void mhs_http_response_cb_process(MolochSession_t *UNUSED(session), gpoin
     lua_pushlstring(L, (char *)lhttp->data, lhttp->len);
 
     if (lua_pcall(L, 2, 0, 0) != 0) {
-       LOG("error running http callback function %s", lua_tostring(L, -1));
-       exit(0);
+       LOGEXIT("error running http callback function %s", lua_tostring(L, -1));
     }
 
     g_free(lhttp->data);

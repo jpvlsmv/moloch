@@ -1,7 +1,7 @@
 /******************************************************************************/
 /* writer-s3.c  -- S3 Writer Plugin
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -174,8 +174,7 @@ void writer_s3_init_cb (int UNUSED(code), unsigned char *data, int len, gpointer
         file->partNumber = 1;
         file->partNumberResponses = 1;
     } else {
-        LOG("Unknown s3 response: %.*s", len, data);
-        exit(1);
+        LOGEXIT("Unknown s3 response: %.*s", len, data);
     }
     g_match_info_free(match_info);
 
@@ -453,7 +452,7 @@ writer_s3_write(const MolochSession_t *const UNUSED(session), MolochPacket_t * c
     if (outputFilePos >= config.maxFileSizeB) {
         writer_s3_flush(TRUE);
     }
-    MOLOCH_LOCK(output);
+    MOLOCH_UNLOCK(output);
 }
 /******************************************************************************/
 void writer_s3_init(char *UNUSED(name))
@@ -499,7 +498,7 @@ void writer_s3_init(char *UNUSED(name))
 
     char host[200];
     snprintf(host, sizeof(host), "https://%s", s3Host);
-    s3Server = moloch_http_create_server(host, 443, s3MaxConns, s3MaxRequests, s3Compress);
+    s3Server = moloch_http_create_server(host, s3MaxConns, s3MaxRequests, s3Compress);
     moloch_http_set_header_cb(s3Server, writer_s3_header_cb);
 
     checksum = g_checksum_new(G_CHECKSUM_SHA256);

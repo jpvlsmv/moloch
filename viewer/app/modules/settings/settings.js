@@ -4,6 +4,10 @@
 
   let customCols = require('json!../session/components/custom.columns.json');
 
+  let bodyElem = $(document.body);
+
+  let interval;
+
   /**
    * @class SettingsController
    * @classdesc Interacts with moloch settings page
@@ -14,23 +18,29 @@
 
     /**
      * Initialize global variables for this controller
-     * @param $interval     Angular's wrapper for window.setInterval
-     * @param $location     Exposes browser address bar URL (window.location)
-     * @param $routeParams  Retrieves the current set of route parameters
-     * @param UserService   Transacts users and user data with the server
-     * @param FieldService  Transacts fields with the server
-     * @param ConfigService Transacts app configurations with the server
+     * @param $window         Angular's reference to the browser's window object
+     * @param $document       Angular's jQuery wrapper for window.document object
+     * @param $interval       Angular's wrapper for window.setInterval
+     * @param $location       Exposes browser address bar URL (window.location)
+     * @param $routeParams    Retrieves the current set of route parameters
+     * @param UserService     Transacts users and user data with the server
+     * @param FieldService    Transacts fields with the server
+     * @param ConfigService   Transacts app configurations with the server
+     * @param SessionService  Transacts sessions with the server
      *
      * @ngInject
      */
-    constructor($interval, $routeParams, $location,
-                UserService, FieldService, ConfigService) {
+    constructor($window, $document, $interval, $location, $routeParams,
+                UserService, FieldService, ConfigService, SessionService) {
+      this.$window        = $window;
+      this.$document      = $document;
       this.$interval      = $interval;
       this.$location      = $location;
       this.$routeParams   = $routeParams;
       this.UserService    = UserService;
       this.FieldService   = FieldService;
       this.ConfigService  = ConfigService;
+      this.SessionService = SessionService;
     }
 
     /* Callback when component is mounted and ready */
@@ -38,22 +48,38 @@
       this.loading  = true;
       this.error    = false;
 
-      this.visibleTab = 'general';
+      this.visibleTab = 'general'; // default tab
+
+      // does the url specify a tab in hash
+      let tab = this.$location.hash();
+      if (tab) { // if there is a tab specified and it's a valid tab
+        if (tab === 'general' || tab === 'views' || tab === 'cron' ||
+            tab === 'col' || tab === 'theme' || tab === 'password') {
+          this.visibleTab = tab;
+        }
+      }
 
       this.newCronQueryProcess  = '0';
       this.newCronQueryAction   = 'tag';
 
+      this.getThemeColors();
+      this.themeDisplays = [
+        { name: 'Purp-purp', class: 'default-theme' },
+        { name: 'Blue', class: 'blue-theme' },
+        { name: 'Green', class: 'green-theme' },
+        { name: 'Cotton Candy', class: 'cotton-candy-theme' },
+        { name: 'Green on Black', class: 'dark-2-theme' },
+        { name: 'Dark Blue', class: 'dark-3-theme' }
+      ];
+
       this.UserService.getCurrent()
         .then((response) => {
-          let isAdminEdit = false;
-
           // only admins can edit other users' settings
           if (response.createEnabled && this.$routeParams.userId) {
             if (response.userId === this.$routeParams.userId) {
               // admin editing their own user so the routeParam is unnecessary
               this.$location.search('userId', null);
             } else { // admin editing another user
-              isAdminEdit = true;
               this.userId = this.$routeParams.userId;
             }
           } else { // normal user has no permission, so remove the routeParam
@@ -61,15 +87,9 @@
             this.$location.search('userId', null);
           }
 
-          // set the settings
-          if (isAdminEdit) { // get settings if it's for a different user
-            this.getSettings();
-          } else { // we already have the current user's settings
-            this.loading  = false;
-            this.settings = response.settings;
-
-            this.startClock();
-          }
+          // always get the user's settings because current user is cached
+          // so response.settings might be stale
+          this.getSettings();
 
           // get all the other things!
           this.getViews();
@@ -109,7 +129,25 @@
             let field = this.fields[i];
             this.fieldsMap[field.dbField] = field;
           }
+
+          this.SessionService.getState('sessionsNew')
+             .then((response) => {
+               this.setupColumns(response.data.visibleHeaders);
+               // if the sort column setting does not match any of the visible
+               // headers, set the sort column setting to last
+               if (response.data.visibleHeaders.indexOf(this.settings.sortColumn === -1)) {
+                 this.settings.sortColumn = 'last';
+               }
+             })
+             .catch(() => {
+               this.setupColumns(['fp','lp','src','p1','dst','p2','pa','dbby','no','info']);
+             });
         });
+    }
+
+    /* fired when controller's containing scope is destroyed */
+    $onDestroy() {
+      if (interval) { this.$interval.cancel(interval); }
     }
 
 
@@ -120,6 +158,8 @@
         .then((response) => {
           this.settings = response;
           this.loading  = false;
+
+          this.setTheme();
 
           this.startClock();
         })
@@ -167,6 +207,8 @@
     /* opens a specific settings tab */
     openView(tabName) {
       this.visibleTab = tabName;
+
+      this.$location.hash(tabName);
     }
 
     /* remove the message when user is done with it or duration ends */
@@ -178,18 +220,30 @@
     /* starts the clock for the timezone setting */
     startClock() {
       this.tick();
-      this.$interval(() => { this.tick(); }, 1000);
+      interval = this.$interval(() => { this.tick(); }, 1000);
     }
 
 
     /* GENERAL ------------------------------------------------------------- */
-    /* saves the user's settings and displays a message */
-    update() {
+    /**
+     * saves the user's settings and displays a message
+     * @param updateTheme whether to update the UI theme
+     */
+    update(updateTheme) {
       this.UserService.saveSettings(this.settings, this.userId)
         .then((response) => {
           // display success message to user
           this.msg = response.text;
           this.msgType = 'success';
+
+          if (updateTheme) {
+            let now = Date.now();
+            if ($('link[href^="user.css"]').length) {
+              $('link[href^="user.css"]').remove();
+            }
+            $('head').append(`<link rel="stylesheet"
+                              href="user.css?v${now}" type="text/css" />`);
+          }
         })
         .catch((error) => {
           // display error message to user
@@ -238,6 +292,17 @@
         if (dbField === this.fields[i].dbField) {
           return this.fields[i];
         }
+      }
+    }
+
+    /**
+     * Setup this.columns with a list of field objects
+     * @param {array} colIdArray The array of column ids
+     */
+    setupColumns(colIdArray) {
+      this.columns = [];
+      for (let i = 0, len = colIdArray.length; i < len; ++i) {
+        this.columns.push(this.getField(colIdArray[i]));
       }
     }
 
@@ -493,6 +558,100 @@
     }
 
 
+    /* THEMES -------------------------------------------------------------- */
+    setTheme() {
+      // default to default theme if the user has not set a theme
+      if (!this.settings.theme) { this.settings.theme = 'default-theme'; }
+      if (this.settings.theme.startsWith('custom')) {
+        this.settings.theme = 'custom-theme';
+        this.creatingCustom = true;
+      }
+    }
+
+    /* changes the ui theme (picked from existing themes) */
+    changeTheme() {
+      bodyElem.removeClass();
+      bodyElem.addClass(this.settings.theme);
+
+      this.update();
+
+      this.getThemeColors();
+    }
+
+    /* changes a color value of a custom theme and applies the theme */
+    changeColor() {
+      bodyElem.removeClass();
+      bodyElem.addClass('custom-theme');
+
+      this.setThemeString();
+
+      this.settings.theme = `custom1:${this.themeString}`;
+
+      this.update(true);
+    }
+
+    /* retrievs the theme colors from the document body's property values */
+    getThemeColors() {
+      let styles  = this.$window.getComputedStyle(this.$document[0].body);
+
+      this.background       = styles.getPropertyValue('--color-background').trim() || '#FFFFFF';
+      this.foreground       = styles.getPropertyValue('--color-foreground').trim() || '#333333';
+      this.foregroundAccent = styles.getPropertyValue('--color-foreground-accent').trim();
+
+      this.primary = styles.getPropertyValue('--color-primary').trim();
+      this.primaryLightest = styles.getPropertyValue('--color-primary-lightest').trim();
+
+      this.secondary = styles.getPropertyValue('--color-secondary').trim();
+      this.secondaryLightest = styles.getPropertyValue('--color-secondary-lightest').trim();
+
+      this.tertiary = styles.getPropertyValue('--color-tertiary').trim();
+      this.tertiaryLightest = styles.getPropertyValue('--color-tertiary-lightest').trim();
+
+      this.quaternary = styles.getPropertyValue('--color-quaternary').trim();
+      this.quaternaryLightest = styles.getPropertyValue('--color-quaternary-lightest').trim();
+
+      this.water  = styles.getPropertyValue('--color-water').trim();
+      this.land   = styles.getPropertyValue('--color-land').trim() || this.primary;
+
+      this.src = styles.getPropertyValue('--color-src').trim() || '#CA0404';
+      this.dst = styles.getPropertyValue('--color-dst').trim() || '#0000FF';
+
+      this.setThemeString();
+    }
+
+    updateThemeString() {
+      let colors = this.themeString.split(',');
+
+      this.background = colors[0];
+      this.foreground = colors[1];
+      this.foregroundAccent = colors[2];
+
+      this.primary = colors[3];
+      this.primaryLightest = colors[4];
+
+      this.secondary = colors[5];
+      this.secondaryLightest = colors[6];
+
+      this.tertiary = colors[7];
+      this.tertiaryLightest = colors[8];
+
+      this.quaternary = colors[9];
+      this.quaternaryLightest = colors[10];
+
+      this.water = colors[11];
+      this.land = colors[12];
+
+      this.src = colors[13];
+      this.dst = colors[14];
+
+      this.changeColor();
+    }
+
+    setThemeString() {
+      this.themeString = `${this.background},${this.foreground},${this.foregroundAccent},${this.primary},${this.primaryLightest},${this.secondary},${this.secondaryLightest},${this.tertiary},${this.tertiaryLightest},${this.quaternary},${this.quaternaryLightest},${this.water},${this.land},${this.src},${this.dst}`;
+    }
+
+
     /* COLUMN CONFIGURATIONS ----------------------------------------------- */
     /**
      * Deletes a previously saved custom column configuration
@@ -562,8 +721,8 @@
     }
   }
 
-  SettingsController.$inject = ['$interval', '$routeParams', '$location',
-    'UserService', 'FieldService', 'ConfigService'];
+  SettingsController.$inject = ['$window','$document','$interval','$location',
+    '$routeParams','UserService','FieldService','ConfigService','SessionService'];
 
   /**
    * ES Health Directive

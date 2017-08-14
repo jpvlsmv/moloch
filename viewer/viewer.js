@@ -17,7 +17,7 @@
  */
 'use strict';
 
-var MIN_DB_VERSION = 34;
+var MIN_DB_VERSION = 35;
 
 //// Modules
 //////////////////////////////////////////////////////////////////////////////////
@@ -42,7 +42,6 @@ var Config         = require('./config.js'),
     molochversion  = require('./version'),
     http           = require('http'),
     pug            = require('pug'),
-    jade           = require('jade'),
     https          = require('https'),
     EventEmitter   = require('events').EventEmitter,
     decode         = require('./decode.js');
@@ -161,6 +160,12 @@ app.use(methodOverride());
 
 app.use('/font-awesome', express.static(__dirname + '/node_modules/font-awesome', { maxAge: 600 * 1000}));
 app.use('/bootstrap', express.static(__dirname + '/node_modules/bootstrap', { maxAge: 600 * 1000}));
+
+app.use('/cyberchef.htm', function(req, res, next) {
+  res.setHeader("Vary", "Accept-Encoding");
+  res.setHeader("Content-Encoding", "gzip");
+  res.sendFile(__dirname + "/public/cyberchef.htm.gz");
+});
 
 
 app.use("/", express.static(__dirname + '/public', { maxAge: 600 * 1000}));
@@ -369,44 +374,6 @@ function dot2value(obj, str) {
       return str.split(".").reduce(function(o, x) { return o[x]; }, obj);
 }
 
-function createSessionDetailOld() {
-  var found = {};
-  var dirs = [];
-
-  dirs = dirs.concat(Config.get("pluginsDir", "/data/moloch/plugins").split(';'));
-  dirs = dirs.concat(Config.get("parsersDir", "/data/moloch/parsers").split(';'));
-
-  dirs.forEach(function(dir) {
-    try {
-      var files = fs.readdirSync(dir);
-      files.forEach(function(file) {
-        if (file.match(/\.detail\.jade$/i) && !found[file]) {
-          found[file] = "  include " + dir + "/" + file + "\n";
-        }
-      });
-    } catch (e) {}
-  });
-
-  var makers = internals.pluginEmitter.listeners("makeSessionDetail");
-  async.each(makers, function(cb, nextCb) {
-    cb(function (err, items) {
-      for (var k in items) {
-        found[k] = items[k].replace(/^/mg, "  ") + "\n";
-      }
-      return nextCb();
-    });
-  }, function () {
-    internals.sessionDetailOld =    "include views/mixins.jade\n" +
-                                    "div.sessionDetail(sessionid='#{session.id}')\n" +
-                                    "  include views/sessionDetail-standard.jade\n";
-    Object.keys(found).sort().forEach(function(k) {
-      internals.sessionDetailOld += found[k];
-    });
-    internals.sessionDetailOld +=   "  include views/sessionDetail-body.jade\n";
-    internals.sessionDetailOld +=   "include views/sessionDetail-footer.jade\n";
-  });
-}
-
 function createSessionDetailNew() {
   var found = {};
   var dirs = [];
@@ -419,13 +386,14 @@ function createSessionDetailNew() {
       var files = fs.readdirSync(dir);
       // sort().reverse() so in this dir pug is processed before jade
       files.sort().reverse().forEach(function(file) {
-        if (found[file]) {
+        var sfile = file.replace(/\.(pug|jade)/, "");
+        if (found[sfile]) {
           return;
         }
         if (file.match(/\.detail\.jade$/i)) {
-          found[file] = fs.readFileSync(dir + "/" + file, 'utf8').replace(/^/mg, "  ") + "\n";
+          found[sfile] = fs.readFileSync(dir + "/" + file, 'utf8').replace(/^/mg, "  ") + "\n";
         } else if (file.match(/\.detail\.pug$/i)) {
-          found[file] = "  include " + dir + "/" + file + "\n";
+          found[sfile] = "  include " + dir + "/" + file + "\n";
         }
       });
     } catch (e) {}
@@ -447,7 +415,7 @@ function createSessionDetailNew() {
       internals.sessionDetailNew += found[k];
     });
 
-    internals.sessionDetailNew = internals.sessionDetailNew.replace(/div.sessionDetailMeta.bold/g, "h4")
+    internals.sessionDetailNew = internals.sessionDetailNew.replace(/div.sessionDetailMeta.bold/g, "h4.sessionDetailMeta")
                                                            .replace(/dl.sessionDetailMeta/g, "dl")
                                                            .replace(/a.moloch-right-click.*molochexpr='([^']+)'.*#{(.*)}/g, "+clickableValue('$1', $2)")
                                                            ;
@@ -455,7 +423,6 @@ function createSessionDetailNew() {
 }
 
 function createSessionDetail() {
-  createSessionDetailOld();
   createSessionDetailNew();
 }
 
@@ -681,6 +648,7 @@ function checkToken(req, res, next) {
   return next();
 }
 
+
 function checkCookieToken(req, res, next) {
   function error(text) {
     res.status(500);
@@ -712,7 +680,6 @@ function checkWebEnabled(req, res, next) {
 //////////////////////////////////////////////////////////////////////////////////
 //// Pages
 //////////////////////////////////////////////////////////////////////////////////
-
 // APIs disabled in demoMode, needs to be before real callbacks
 if (Config.get('demoMode', false)) {
   console.log("WARNING - Starting in demo mode, some APIs disabled");
@@ -741,38 +708,6 @@ function makeTitle(req, page) {
   return title;
 }
 
-function sessionsOld (req, res) {
-  var settings = decode.settings();
-  var decodeItems = {};
-  for (var key in settings) {
-    var setting = settings[key];
-    var obj = {name: setting.name || key};
-    if (setting.title || setting.fields) {
-      obj.items = {};
-      if (setting.title) {
-        obj.items.title = {name: setting.title, disabled: true};
-      }
-      obj.items[key + ":enabled"] = {name: "Enable", type: "checkbox"};
-      setting.fields.forEach(function(field) {
-        obj.items[key + ":" + field.key] = {name: field.name || field.key, type: field.type};
-      });
-      decodeItems[key] = obj;
-    } else {
-      obj.type = "checkbox";
-      decodeItems[key+":enabled"] = obj;
-    }
-  }
-
-  res.render('index.jade', {
-    user: req.user,
-    title: makeTitle(req, 'Sessions'),
-    titleLink: 'sessionsLink',
-    helpLink: 'sessions',
-    isIndex: true,
-    decodeItems: JSON.stringify(decodeItems)
-  });
-}
-
 app.get(['/', '/app'], function(req, res) {
   var question = req.url.indexOf("?");
   if (question === -1) {
@@ -782,58 +717,27 @@ app.get(['/', '/app'], function(req, res) {
   }
 });
 
-app.get("/sessions.old", checkWebEnabled, sessionsOld);
-
-app.get("/spiview.old", checkWebEnabled, function(req, res) {
-  res.render('spiview.jade', {
-    user: req.user,
-    title: makeTitle(req, 'SPI View'),
-    titleLink: 'spiLink',
-    helpLink: 'spiview',
-    isIndex: true,
-    reqFields: Config.headers("headers-http-request"),
-    resFields: Config.headers("headers-http-response"),
-    emailFields: Config.headers("headers-email"),
-    categories: Config.getCategories(),
-    token: Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId, suserId: req.user.userId})
-  });
-});
-
-app.get("/spigraph", checkWebEnabled, function(req, res) {
-  res.render('spigraph.jade', {
-    user: req.user,
-    title: makeTitle(req, 'SPI Graph'),
-    titleLink: 'spigraphLink',
-    helpLink: 'spigraph',
-    isIndex: true
-  });
-});
-
-app.get("/connections", checkWebEnabled, function(req, res) {
-  res.render('connections.jade', {
-    user: req.user,
-    title: makeTitle(req, 'Connections'),
-    titleLink: 'connectionsLink',
-    helpLink: 'connections',
-    isIndex: true
-  });
-});
-
-app.get("/upload", checkWebEnabled, function(req, res) {
-  res.render('upload.jade', {
-    user: req.user,
-    title: makeTitle(req, 'Upload'),
-    titleLink: 'uploadLink',
-    helpLink: 'upload',
-    isIndex: false
-  });
-});
-
 app.get('/about', checkWebEnabled, function(req, res) {
   res.redirect("help");
 });
 
 app.get('/molochclusters', function(req, res) {
+  function cloneClusters(clusters) {
+    var clone = {};
+
+    for (var key in app.locals.molochClusters) {
+      if (app.locals.molochClusters.hasOwnProperty(key)) {
+        var cluster = app.locals.molochClusters[key];
+        clone[key] = {
+          name: cluster.name,
+          url : cluster.url
+        };
+      }
+    }
+
+    return clone;
+  }
+
   if(!app.locals.molochClusters) {
     var molochClusters = Config.configMap("moloch-clusters");
 
@@ -842,81 +746,14 @@ app.get('/molochclusters', function(req, res) {
       return res.send('Cannot locate right clicks');
     }
 
-    return res.send(molochClusters);
+    var clustersClone = cloneClusters(molochClusters);
+
+    return res.send(clustersClone);
   }
 
-  return res.send(app.locals.molochClusters);
-});
+  var clustersClone = cloneClusters(app.locals.molochClusters);
 
-app.get('/stats.old', checkWebEnabled, function(req, res) {
-  var query = {size: 100};
-
-  Db.search('stats', 'stat', query, function(err, data) {
-    var hits = data.hits.hits;
-    var nodes = [];
-    hits.forEach(function(hit) {
-      nodes.push(hit._id);
-    });
-    nodes.sort();
-    res.render('stats.jade', {
-      user: req.user,
-      title: makeTitle(req, 'Stats'),
-      titleLink: 'statsLink',
-      helpLink: 'stats',
-      nodes: nodes
-    });
-  });
-});
-
-app.get('/:nodeName/statsDetail', checkWebEnabled, function(req, res) {
-  res.render('statsDetail.jade', {
-    user: req.user,
-    nodeName: req.params.nodeName
-  });
-});
-
-fs.unlink("./public/style.css", function () {}); // Remove old style.css file
-app.get('/style.css', function(req, res) {
-  fs.readFile("./views/style.styl", 'utf8', function(err, str) {
-    if (err) {return console.log("ERROR - ", err);}
-    var style = stylus(str);
-    style.render(function(err, css){
-      if (err) {return console.log("ERROR - ", err);}
-      var date = new Date().toUTCString();
-      res.setHeader('Content-Type', 'text/css');
-      res.setHeader('Date', date);
-      res.setHeader('Cache-Control', 'public, max-age=600');
-      res.setHeader('Last-Modified', date);
-      res.send(css);
-    });
-  });
-});
-
-// angular app pages
-app.get(['/sessions', '/help', '/settings', '/files', '/stats', '/spiview'], checkWebEnabled, function(req, res) {
-  // send cookie for basic, non admin functions
-  res.cookie(
-     'MOLOCH-COOKIE',
-     Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId}),
-     { path: app.locals.basePath }
-  );
-
-  res.render('app.pug');
-});
-
-app.get(['/users'], checkWebEnabled, function(req, res) {
-  if (!req.user.createEnabled) {
-    return res.status(404).send("Not found");
-  }
-
-  // send cookie for basic, non admin functions
-  res.cookie(
-     'MOLOCH-COOKIE',
-     Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId}),
-     { path: app.locals.basePath }
-  );
-
-  res.render('app.pug');
+  return res.send(clustersClone);
 });
 
 // angular app bundles
@@ -935,6 +772,66 @@ app.get('/vendor.bundle.js.map', function(req, res) {
   res.sendFile(__dirname + '/bundle/vendor.bundle.js.map');
 });
 
+// custom user css
+app.get('/user.css', function(req, res) {
+  fs.readFile("./views/user.styl", 'utf8', function(err, str) {
+    function error(msg) {
+      console.log('ERROR -', msg);
+      return res.status(404).end();
+    }
+
+    var date = new Date().toUTCString();
+    res.setHeader('Content-Type', 'text/css');
+    res.setHeader('Date', date);
+    res.setHeader('Cache-Control', 'public, max-age=0');
+    res.setHeader('Last-Modified', date);
+
+    if (err) { return error(err) }
+    if (!req.user.settings.theme) { return error('no custom theme defined'); }
+
+    var theme = req.user.settings.theme.split(':');
+
+    if (!theme[1]) { return error('custom theme corrupted'); }
+
+    var style = stylus(str);
+
+    var colors = theme[1].split(',');
+
+    if (!colors) { return error('custom theme corrupted'); }
+
+    style.define('colorBackground', new stylus.nodes.Literal(colors[0]));
+    style.define('colorForeground', new stylus.nodes.Literal(colors[1]));
+    style.define('colorForegroundAccent', new stylus.nodes.Literal(colors[2]));
+
+    style.define('colorWhite', new stylus.nodes.Literal('#FFFFFF'));
+    style.define('colorBlack', new stylus.nodes.Literal('#333333'));
+    style.define('colorGray', new stylus.nodes.Literal('#CCCCCC'));
+    style.define('colorGrayDark', new stylus.nodes.Literal('#777777'));
+    style.define('colorGrayDarker', new stylus.nodes.Literal('#555555'));
+    style.define('colorGrayLight', new stylus.nodes.Literal('#EEEEEE'));
+    style.define('colorGrayLighter', new stylus.nodes.Literal('#F6F6F6'));
+
+    style.define('colorPrimary', new stylus.nodes.Literal(colors[3]));
+    style.define('colorPrimaryLightest', new stylus.nodes.Literal(colors[4]));
+    style.define('colorSecondary', new stylus.nodes.Literal(colors[5]));
+    style.define('colorSecondaryLightest', new stylus.nodes.Literal(colors[6]));
+    style.define('colorTertiary', new stylus.nodes.Literal(colors[7]));
+    style.define('colorTertiaryLightest', new stylus.nodes.Literal(colors[8]));
+    style.define('colorQuaternary', new stylus.nodes.Literal(colors[9]));
+    style.define('colorQuaternaryLightest', new stylus.nodes.Literal(colors[10]));
+
+    style.define('colorWater', new stylus.nodes.Literal(colors[11]));
+    style.define('colorLand', new stylus.nodes.Literal(colors[12]));
+    style.define('colorSrc', new stylus.nodes.Literal(colors[13]));
+    style.define('colorDst', new stylus.nodes.Literal(colors[14]));
+
+    style.render(function(err, css){
+      if (err) { return error(err); }
+      return res.send(css);
+    });
+  });
+});
+
 
 /* User Endpoints ---------------------------------------------------------- */
 // default settings for users with no settings
@@ -947,7 +844,8 @@ var settingDefaults = {
   spiGraph      : 'no',
   connSrcField  : 'a1',
   connDstField  : 'ip.dst:port',
-  numPackets    : 'last'
+  numPackets    : 'last',
+  theme         : 'default-theme'
 };
 
 // gets the current user
@@ -976,9 +874,14 @@ app.get('/user/current', function(req, res) {
       }
     }
 
-    // send default settings if user doesn't have settings
-    if (Object.keys(clone.settings).length === 0) {
-      clone.settings = settingDefaults;
+    clone['canUpload'] = app.locals.allowUploads;
+
+    // If no settings, use defaults
+    if (clone.settings === undefined) {clone.settings = settingDefaults;}
+
+    // Use settingsDefaults for any settings that are missing
+    for (var item in settingDefaults) {
+      if (clone.settings[item] === undefined) {clone.settings[item] = settingDefaults[item];}
     }
 
     return res.send(clone);
@@ -1012,6 +915,12 @@ app.get('/user/settings', function(req, res) {
     }
 
     var settings = user._source.settings || settingDefaults;
+
+    res.cookie(
+       'MOLOCH-COOKIE',
+       Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId}),
+       { path: app.locals.basePath }
+    );
 
     return res.send(settings);
   });
@@ -1134,7 +1043,8 @@ app.post('/user/views/create', checkCookieToken, function(req, res) {
       }
       return res.send(JSON.stringify({
         success : true,
-        text    : 'Created view successfully'
+        text    : 'Created view successfully',
+        views   : user.views
       }));
     });
   });
@@ -1596,6 +1506,139 @@ app.post('/user/columns/delete', checkCookieToken, function(req, res) {
   });
 });
 
+// gets custom spiview fields configurations for a user
+app.get('/user/spiview/fields', function(req, res) {
+  Db.getUserCache(req.user.userId, function(err, user) {
+    if (err || !user || !user.found) {
+      if (app.locals.noPasswordSecret) {
+        // TODO: send anonymous user's opened fields
+        return res.send('[]');
+      } else {
+        console.log('Unknown user', err, user);
+        return res.send('[]');
+      }
+    }
+
+    var fieldConfigurations = user._source.spiviewFieldConfigs || [];
+
+    return res.send(fieldConfigurations);
+  });
+});
+
+// creates a new custom spiview fields configuration for a user
+app.post('/user/spiview/fields/create', checkCookieToken, function(req, res) {
+  function error(status, text) {
+    res.status(status || 403);
+    return res.send(JSON.stringify({ success: false, text: text }));
+  }
+
+  if (req.query.userId && (req.query.userId !== req.user.userId) && !req.user.createEnabled) {
+    // user is trying to create a view for another user without admin privilege
+    return error(403, 'Need admin privileges');
+  }
+
+  if (!req.body.name)   { return error(403, 'Missing custom spiview field configuration name'); }
+  if (!req.body.fields) { return error(403, 'Missing fields'); }
+
+  var userId = req.user.userId;                         // get current user
+  if (req.query.userId) { userId = req.query.userId; }  // or requested user
+
+  Db.getUser(userId, function(err, user) {
+    if (err || !user.found) {
+      console.log('/user/columns/create failed', err, user);
+      return error(403, 'Unknown user');
+    }
+
+    req.body.name = req.body.name.replace(/[^-a-zA-Z0-9\s_:]/g, '');
+
+    if (req.body.name.length < 1) {
+      return error(403, 'Invalid custom spiview fields configuration name');
+    }
+
+    user = user._source;
+    user.spiviewFieldConfigs = user.spiviewFieldConfigs || [];
+
+    var duplicate = false;
+    // don't let user use duplicate names
+    for (var i = 0, len = user.spiviewFieldConfigs.length; i < len; ++i) {
+      if (req.body.name === user.spiviewFieldConfigs[i].name) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) { return error(403, 'There is already a custom spiview fields configuration with that name'); }
+
+    user.spiviewFieldConfigs.push({
+      name  : req.body.name,
+      fields: req.body.fields
+    });
+
+    Db.setUser(user.userId, user, function(err, info) {
+      if (err) {
+        console.log('/user/spiview/fields/create error', err, info);
+        return error(500, 'Create custom spiview fields configuration failed');
+      }
+      return res.send(JSON.stringify({
+        success : true,
+        text    : 'Created custom spiview fields configuration successfully',
+        name    : req.body.name
+      }));
+    });
+  });
+});
+
+// deletes a user's specified custom spiview fields configuration
+app.post('/user/spiview/fields/delete', checkCookieToken, function(req, res) {
+  function error(status, text) {
+    res.status(status || 403);
+    return res.send(JSON.stringify({ success: false, text: text }));
+  }
+
+  if (req.query.userId && (req.query.userId !== req.user.userId) && !req.user.createEnabled) {
+    // user is trying to delete another user's view without admin privilege
+    return error(403, 'Need admin privileges');
+  }
+
+  if (!req.body.name) { return error(403, 'Missing custom spiview fields configuration name'); }
+
+  var userId = req.user.userId;                         // get current user
+  if (req.query.userId) { userId = req.query.userId; }  // or requested user
+
+  Db.getUser(userId, function(err, user) {
+    if (err || !user.found) {
+      console.log('/user/spiview/fields/delete failed', err, user);
+      return error(403, 'Unknown user');
+    }
+
+    user = user._source;
+    user.spiviewFieldConfigs = user.spiviewFieldConfigs || [];
+
+    for (var i = 0, len = user.spiviewFieldConfigs.length; i < len; ++i) {
+      if (req.body.name === user.spiviewFieldConfigs[i].name) {
+        user.spiviewFieldConfigs.splice(i, 1);
+        break;
+      }
+    }
+
+    Db.setUser(user.userId, user, function(err, info) {
+      if (err) {
+        console.log('/user/spiview/fields/delete failed', err, info);
+        return error(500, 'Delete custom spiview fields configuration failed');
+      }
+      return res.send(JSON.stringify({
+        success : true,
+        text    : 'Deleted custom spiview fields configuration successfully'
+      }));
+    });
+  });
+});
+
+
+app.get('/decodings', function(req, res) {
+  var decodeItems = decode.settings();
+  res.send(JSON.stringify(decodeItems));
+});
+
 
 //////////////////////////////////////////////////////////////////////////////////
 //// EXPIRING
@@ -2021,20 +2064,20 @@ function buildSessionQuery(req, buildCb) {
     }
   }
 
-
   if (req.query.facets) {
     query.aggregations = {mapG1: {terms: {field: "g1", size:1000, min_doc_count:1}},
-                          mapG2: {terms: {field: "g2", size:1000, min_doc_count:1}}
-                 };
+                          mapG2: {terms: {field: "g2", size:1000, min_doc_count:1}}};
+    query.aggregations.dbHisto = {aggregations: {db1: {sum: {field:"db1"}}, db2: {sum: {field:"db2"}}, pa1: {sum: {field:"pa1"}}, pa2: {sum: {field:"pa2"}}}};
+
     switch (req.query.bounding) {
     case "first":
-      query.aggregations.dbHisto = {histogram : {field: "fp", interval: interval, min_doc_count:1}, aggregations: {db : {sum: {field:"db"}}, pa: {sum: {field:"pa"}}}};
+       query.aggregations.dbHisto.histogram = { field:'fp', interval:interval, min_doc_count:1 };
       break;
     case "database":
-      query.aggregations.dbHisto = {histogram : {field: "timestamp", interval: interval*1000, min_doc_count:1}, aggregations: {db : {sum: {field:"db"}}, pa: {sum: {field:"pa"}}}};
+      query.aggregations.dbHisto.histogram = { field:'timestamp', interval:interval*1000, min_doc_count:1 };
       break;
     default:
-      query.aggregations.dbHisto = {histogram : {field: "lp", interval: interval, min_doc_count:1}, aggregations: {db : {sum: {field:"db"}}, pa: {sum: {field:"pa"}}}};
+      query.aggregations.dbHisto.histogram = { field:'lp', interval:interval, min_doc_count:1 };
       break;
     }
   }
@@ -2116,7 +2159,6 @@ function sessionsListAddSegments(req, indices, query, list, cb) {
     processedRo[fields.ro] = true;
 
     query.query.bool.filter.push({term: {ro: fields.ro}});
-
     Db.searchPrimary(indices, 'session', query, function(err, result) {
       if (err || result === undefined || result.hits === undefined || result.hits.hits === undefined) {
         console.log("ERROR fetching matching sessions", err, result);
@@ -2130,13 +2172,15 @@ function sessionsListAddSegments(req, indices, query, list, cb) {
       });
       return nextCb(null);
     });
+    query.query.bool.filter.pop();
+
   }, function (err) {
     cb(err, list);
   });
 }
 
 function sessionsListFromQuery(req, res, fields, cb) {
-  if (req.query.segments && fields.indexOf("ro") === -1) {
+  if (req.query.segments && req.query.segments.match(/^(time|all)$/) && fields.indexOf("ro") === -1) {
     fields.push("ro");
   }
 
@@ -2148,7 +2192,7 @@ function sessionsListFromQuery(req, res, fields, cb) {
           return res.send("Could not fetch list of sessions.  Err: " + err + " Result: " + result);
       }
       var list = result.hits.hits;
-      if (req.query.segments) {
+      if (req.query.segments && req.query.segments.match(/^(time|all)$/)) {
         sessionsListAddSegments(req, indices, query, list, function(err, list) {
           cb(err, list);
         });
@@ -2186,7 +2230,7 @@ function sessionsListFromIds(req, ids, fields, cb) {
       nextCb(null);
     });
   }, function(err) {
-    if (req && req.query.segments) {
+    if (req && req.query.segments && req.query.segments.match(/^(time|all)$/)) {
       buildSessionQuery(req, function(err, query, indices) {
         query._source = fields;
         sessionsListAddSegments(req, indices, query, list, function(err, list) {
@@ -2396,12 +2440,20 @@ app.get('/stats.json', function(req, res) {
                size: Math.min(10000, +req.query.length || 500)
               };
 
-  if (req.query.filter !== undefined) {
-    query.query = {wildcard: {nodeName: "*" + req.query.filter + "*"}};
+  if (req.query.filter !== undefined && req.query.filter !== '') {
+    let names = req.query.filter.split(',');
+    query.query = { bool: { should: [] } };
+    for (let i = 0, len = names.length; i < len; ++i) {
+      let name = names[i].trim();
+      if (name !== '') {
+        query.query.bool.should.push({
+          wildcard: {nodeName: '*' + name + '*'}
+        });
+      }
+    }
   }
 
   if (req.query.sortField !== undefined || req.query.desc !== undefined) {
-    console.log("DESC", req.query.desc, typeof req.query.desc);
     query.sort = {};
     req.query.sortField = req.query.sortField || "nodeName";
     query.sort[req.query.sortField] = { order: req.query.desc === "true" ? "desc": "asc"};
@@ -2465,6 +2517,8 @@ app.get('/stats.json', function(req, res) {
 app.get('/dstats.json', function(req, res) {
   noCache(req, res);
 
+  var nodeName = req.query.nodeName;
+
   var query = {
                query: {
                  bool: {
@@ -2480,10 +2534,10 @@ app.get('/dstats.json', function(req, res) {
                }
               };
 
-  if (req.query.nodeName !== undefined) {
+  if (nodeName !== undefined && nodeName !== 'Total' && nodeName !== 'Average') {
     query.sort = {currentTime: {order: 'desc' }};
     query.size = req.query.size || 1440;
-    query.query.bool.filter.push({term: { nodeName: req.query.nodeName}});
+    query.query.bool.filter.push({term: { nodeName: nodeName}});
   } else {
     query.size = 100000;
   }
@@ -2534,13 +2588,31 @@ app.get('/dstats.json', function(req, res) {
         data[fields.nodeName][pos] = mult * func(fields);
       }
     }
-    if (req.query.nodeName === undefined) {
+    if (nodeName === undefined) {
       res.send(data);
     } else {
-      if (data[req.query.nodeName] === undefined) {
-        data[req.query.nodeName] = arrayZeroFill(num);
+      if (data[nodeName] === undefined) {
+        data[nodeName] = arrayZeroFill(num);
       }
-      res.send(data[req.query.nodeName]);
+      if (nodeName === 'Total' || nodeName === 'Average') {
+        delete data[nodeName];
+        var data2 = arrayZeroFill(num);
+        var cnt = 0;
+        for (var key in data) {
+          for (i = 0; i < num; i++) {
+            data2[i] += data[key][i];
+          }
+          cnt++;
+        }
+        if (nodeName === 'Average') {
+          for (i = 0; i < num; i++) {
+            data2[i] /= cnt;
+          }
+        }
+        res.send(data2);
+      } else {
+        res.send(data[req.query.nodeName]);
+      }
     }
   });
 });
@@ -2581,8 +2653,10 @@ function mapMerge(aggregations) {
 function graphMerge(req, query, aggregations) {
   var graph = {
     lpHisto: [],
-    dbHisto: [],
-    paHisto: [],
+    db1Histo: [],
+    db2Histo: [],
+    pa1Histo: [],
+    pa2Histo: [],
     xmin: req.query.startTime * 1000|| null,
     xmax: req.query.stopTime * 1000 || null,
     interval: query.aggregations?query.aggregations.dbHisto.histogram.interval || 60 : 60
@@ -2597,15 +2671,19 @@ function graphMerge(req, query, aggregations) {
     aggregations.dbHisto.buckets.forEach(function (item) {
       var key = item.key;
       graph.lpHisto.push([key, item.doc_count]);
-      graph.paHisto.push([key, item.pa.value]);
-      graph.dbHisto.push([key, item.db.value]);
+      graph.pa1Histo.push([key, item.pa1.value]);
+      graph.pa2Histo.push([key, item.pa2.value]);
+      graph.db1Histo.push([key, item.db1.value]);
+      graph.db2Histo.push([key, item.db2.value]);
     });
   } else {
     aggregations.dbHisto.buckets.forEach(function (item) {
       var key = item.key*1000;
       graph.lpHisto.push([key, item.doc_count]);
-      graph.paHisto.push([key, item.pa.value]);
-      graph.dbHisto.push([key, item.db.value]);
+      graph.pa1Histo.push([key, item.pa1.value]);
+      graph.pa2Histo.push([key, item.pa2.value]);
+      graph.db1Histo.push([key, item.db1.value]);
+      graph.db2Histo.push([key, item.db2.value]);
     });
   }
   return graph;
@@ -2826,14 +2904,16 @@ app.get('/sessions.json', function(req, res) {
 });
 
 app.get('/spigraph.json', function(req, res) {
+  function error(text) {
+    res.status(403);
+    return res.send(JSON.stringify({success: false, text: text}));
+  }
+
   req.query.facets = 1;
   buildSessionQuery(req, function(bsqErr, query, indices) {
     var results = {items: [], graph: {}, map: {}, iTotalRecords: 0};
     if (bsqErr) {
-      results.bsqErr = bsqErr.toString();
-      results.health = Db.healthCache();
-      res.send(results);
-      return;
+      return error(bsqErr.toString());
     }
 
     delete query.sort;
@@ -2877,9 +2957,8 @@ app.get('/spigraph.json', function(req, res) {
     Db.numberOfDocuments('sessions-*', function (err, total) {results.recordsTotal = total;});
     Db.searchPrimary(indices, 'session', query, function(err, result) {
       if (err || result.error) {
-        results.bsqErr = errorString(err, result);
         console.log("spigraph.json error", err, (result?result.error:null));
-        return res.send(results);
+        return error(errorString(err, result));
       }
       results.recordsFiltered = result.hits.total;
 
@@ -2913,11 +2992,11 @@ app.get('/spigraph.json', function(req, res) {
 
           r.graph = graphMerge(req, query, result.responses[i].aggregations);
           if (r.graph.xmin === null) {
-            r.graph.xmin = results.graph.xmin || results.graph.paHisto[0][0];
+            r.graph.xmin = results.graph.xmin || results.graph.pa1Histo[0][0];
           }
 
           if (r.graph.xmax === null) {
-            r.graph.xmax = results.graph.xmax || results.graph.paHisto[results.graph.paHisto.length-1][0];
+            r.graph.xmax = results.graph.xmax || results.graph.pa1Histo[results.graph.pa1Histo.length-1][0];
           }
 
           r.map = mapMerge(result.responses[i].aggregations);
@@ -2929,13 +3008,17 @@ app.get('/spigraph.json', function(req, res) {
             var graph = r.graph;
             for (var i = 0; i < graph.lpHisto.length; i++) {
               r.lpHisto += graph.lpHisto[i][1];
-              r.dbHisto += graph.dbHisto[i][1];
-              r.paHisto += graph.paHisto[i][1];
+              r.dbHisto += graph.db1Histo[i][1] + graph.db2Histo[i][1];
+              r.paHisto += graph.pa2Histo[i][1] + graph.pa2Histo[i][1];
             }
             if (results.items.length === result.responses.length) {
               var s = req.query.sort || "lpHisto";
-              results.items = results.items.sort(function(a,b) {return b[s]- a[s];});
-              //console.log("results", util.inspect(results, false, 50));
+              results.items = results.items.sort(function (a, b) {
+                var result;
+                if (s === 'name') { result = a.name.localeCompare(b.name); }
+                else { result = b[s] - a[s]; }
+                return result;
+              });
               return res.send(results);
             }
           });
@@ -3041,7 +3124,6 @@ app.get('/spiview.json', function(req, res) {
             });
 
             delete result.aggregations.dbHisto;
-            delete result.aggregations.paHisto;
             delete result.aggregations.mapG1;
             delete result.aggregations.mapG2;
             delete result.aggregations.protocols;
@@ -3228,7 +3310,7 @@ function buildConnections(req, res, cb) {
     console.log("buildConnections query", JSON.stringify(query));
 
     Db.searchPrimary(indices, 'session', query, function (err, graph) {
-    console.log("buildConnections result", JSON.stringify(graph));
+    //console.log("buildConnections result", JSON.stringify(graph));
       if (err || graph.error) {
         console.log("Build Connections ERROR", err, graph.error);
         return cb(err || graph.error);
@@ -3311,7 +3393,8 @@ app.get('/connections.json', function(req, res) {
   Db.healthCache(function(err, h) {health = h;});
   buildConnections(req, res, function (err, nodes, links, total) {
     if (err) {
-      return res.send({health: health, bsqErr: err.toString()});
+      res.status(403);
+      return res.send(JSON.stringify({success: false, text: err.toString()}));
     }
     res.send({health: health, nodes: nodes, links: links, recordsFiltered: total});
   });
@@ -3338,62 +3421,99 @@ app.get('/connections.csv', function(req, res) {
   });
 });
 
-function csvListWriter(req, res, list, pcapWriter, extension) {
+function csvListWriter(req, res, list, fields, pcapWriter, extension) {
   if (list.length > 0 && list[0].fields) {
     list = list.sort(function(a,b){return a.fields.lp - b.fields.lp;});
   } else if (list.length > 0 && list[0]._source) {
     list = list.sort(function(a,b){return a._source.lp - b._source.lp;});
   }
 
-  res.write("Protocol, First Packet, Last Packet, Source IP, Source Port, Source Geo, Destination IP, Destination Port, Destination Geo, Packets, Bytes, Data Bytes, Node\r\n");
+  var fieldObjects  = Config.getDBFieldsMap();
 
-  for (var i = 0, ilen = list.length; i < ilen; i++) {
-    var fields = list[i]._source || list[i].fields;
-
-    if (!fields) {
-      continue;
+  if (fields) {
+    var columnHeaders = [];
+    for (var i = 0, len = fields.length; i < len; ++i) {
+      columnHeaders.push(fieldObjects[fields[i]].friendlyName);
     }
-    var pr;
-    switch (fields.pr) {
-    case 1:
-      pr = "icmp";
-      break;
-    case 6:
-      pr = "tcp";
-      break;
-    case 17:
-      pr =  "udp";
-      break;
-    case 58:
-      pr =  "icmpv6";
-      break;
-    }
-
-
-    res.write(pr + ", " + fields.fp + ", " + fields.lp + ", " + Pcap.inet_ntoa(fields.a1) + ", " + fields.p1 + ", " + (fields.g1||"") + ", "  + Pcap.inet_ntoa(fields.a2) + ", " + fields.p2 + ", " + (fields.g2||"") + ", " + fields.pa + ", " + fields.by + ", " + fields.db + ", " + fields.no + "\r\n");
+    res.write(columnHeaders.join(', '));
+    res.write('\r\n');
   }
+
+  for (var j = 0, jlen = list.length; j < jlen; j++) {
+    var sessionData = list[j]._source || list[j].fields;
+
+    if (!fields) { continue; }
+
+    var values = [];
+    for (var k = 0, len = fields.length; k < len; ++k) {
+      let value = sessionData[fields[k]];
+      if (fields[k] === 'pr' && value) {
+        switch (value) {
+          case 1:
+            value = 'icmp';
+            break;
+          case 6:
+            value = 'tcp';
+            break;
+          case 17:
+            value =  'udp';
+            break;
+          case 58:
+            value =  'icmpv6';
+            break;
+        }
+      } else if (fieldObjects[fields[k]].type === 'ip' && value) {
+        value = Pcap.inet_ntoa(value);
+      }
+
+      if (Array.isArray(value)) {
+        let singleValue = '"' + value.join(', ') +  '"';
+        values.push(singleValue);
+      } else {
+        if (value === undefined) { value = ''; }
+        values.push(value);
+      }
+    }
+
+    res.write(values.join(','));
+    res.write('\r\n');
+  }
+
   res.end();
 }
 
 app.get(/\/sessions.csv.*/, function(req, res) {
   noCache(req, res, "text/csv");
+  // default fields to display in csv
   var fields = ["pr", "fp", "lp", "a1", "p1", "g1", "a2", "p2", "g2", "by", "db", "pa", "no"];
+  // save requested fields because sessionsListFromQuery returns fields with
+  // "ro" appended onto the end
+  var reqFields = fields;
+
+  if (req.query.fields) {
+    fields = reqFields = req.query.fields.split(',');
+  }
 
   if (req.query.ids) {
     var ids = queryValueToArray(req.query.ids);
-
     sessionsListFromIds(req, ids, fields, function(err, list) {
-      csvListWriter(req, res, list);
+      csvListWriter(req, res, list, reqFields);
     });
   } else {
     sessionsListFromQuery(req, res, fields, function(err, list) {
-      csvListWriter(req, res, list);
+      csvListWriter(req, res, list, reqFields);
     });
   }
 });
 
 app.get('/uniqueValue.json', function(req, res) {
+  if (!Config.get('valueAutoComplete', !Config.get('multiES', false))) {
+    res.send([]);
+    return;
+  }
+
   noCache(req, res);
+
   var query;
 
   if (req.query.type === "tags") {
@@ -3422,11 +3542,18 @@ app.get('/uniqueValue.json', function(req, res) {
 });
 
 app.get('/unique.txt', function(req, res) {
-  if (req.query.field === undefined) {
-    return res.send("Missing field parameter");
+  if (req.query.field === undefined && req.query.exp === undefined) {
+    return res.send("Missing field or exp parameter");
   }
 
   noCache(req, res);
+
+  // look up the field based on the expression
+  if (req.query.exp && !req.query.field) {
+    var field = Config.getFieldsMap()[req.query.exp];
+    if (field) { req.query.field = field.dbField; }
+    else { req.query.field = req.query.exp; }
+  }
 
   /* How should the results be written.  Use setImmediate to not blow stack frame */
   var writeCb;
@@ -3435,6 +3562,11 @@ app.get('/unique.txt', function(req, res) {
   var items = [];
   var aggSize = 1000000;
   if (req.query.autocomplete !== undefined) {
+    if (!Config.get('valueAutoComplete', !Config.get('multiES', false))) {
+      res.send([]);
+      return;
+    }
+
     var spiDataMaxIndices = +Config.get("spiDataMaxIndices", 3);
     if (spiDataMaxIndices !== -1) {
       if (req.query.date === '-1' ||
@@ -3509,7 +3641,8 @@ app.get('/unique.txt', function(req, res) {
     break;
   }
 
-  if (req.query.field === "a1:p1" || req.query.field === "a2:p2") {
+  if (req.query.field === "ip.src:p1" || req.query.field === "ip.dst:p2" ||
+      req.query.field === "a1:p1" || req.query.field == "a2:p2") {
     eachCb = function(item, cb) {
       var key = Pcap.inet_ntoa(item.key);
       item.field2.buckets.forEach(function (item2) {
@@ -3563,9 +3696,9 @@ app.get('/unique.txt', function(req, res) {
         });
       });
     } else {
-      if (req.query.field === "a1:p1") {
+      if (req.query.field === "ip.src:p1" || req.query.field === "a1:p1") {
         query.aggregations = {field: { terms : {field : "a1", size: aggSize}, aggregations: {field2: {terms: {field: "p1", size: 100}}}}};
-      } else if (req.query.field === "a2:p2") {
+      } else if (req.query.field === "ip.dst:p2" || req.query.field === "a2:p2") {
         query.aggregations = {field: { terms : {field : "a2", size: aggSize}, aggregations: {field2: {terms: {field: "p2", size: 100}}}}};
       } else  {
         query.aggregations = {field: { terms : {field : req.query.field, size: aggSize}}};
@@ -3856,23 +3989,8 @@ function localSessionDetailReturnFull(req, res, session, incoming) {
       res.send(data);
     });
   } else { // return SPI data and packets
-    jade.render(internals.sessionDetailOld, {
-      filename: "sessionDetail",
-      user: req.user,
-      session: session,
-      data: incoming,
-      query: req.query,
-      basedir: "/",
-      reqFields: Config.headers("headers-http-request"),
-      resFields: Config.headers("headers-http-response"),
-      emailFields: Config.headers("headers-email")
-    }, function(err, data) {
-      if (err) {
-        console.trace("ERROR - ", err);
-        return req.next(err);
-      }
-      res.send(data);
-    });
+    res.send("HOW DID I GET HERE?");
+    console.trace("HOW DID I GET HERE");
   }
 }
 
@@ -4112,22 +4230,6 @@ app.get('/:nodeName/session/:id/packets', function(req, res) {
        });
      });
    });
-});
-
-app.get('/:nodeName/:id/sessionDetail', function(req, res) {
-  isLocalView(req.params.nodeName, function () {
-    noCache(req, res);
-    localSessionDetail(req, res);
-  },
-  function () {
-    return proxyRequest(req, res, function (err) {
-      Db.get(Db.id2Index(req.params.id), 'session', req.params.id, function(err, session) {
-        var fields = session._source || session.fields;
-        fields._err = "Couldn't connect to remote viewer, only displaying SPI data";
-        localSessionDetailReturnFull(req, res, fields, []);
-      });
-    });
-  });
 });
 
 function reqGetRawBody(req, cb) {
@@ -4492,51 +4594,6 @@ app.get(/\/sessions.pcap.*/, function(req, res) {
 });
 
 
-app.post('/deleteUser/:userId', checkToken, function(req, res) {
-  if (!req.user.createEnabled) {
-    return res.send(JSON.stringify({success: false, text: "Need admin privileges"}));
-  }
-
-  if (req.params.userId === req.user.userId) {
-    return res.send(JSON.stringify({success: false, text: "Can not delete yourself"}));
-  }
-
-  Db.deleteUser(req.params.userId, function(err, data) {
-    setTimeout(function (){res.send(JSON.stringify({success: true, text: "User deleted"}));}, 200);
-  });
-});
-
-app.post('/changePassword', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.newPassword || req.body.newPassword.length < 3) {
-    return error("New password needs to be at least 3 characters");
-  }
-
-  if (req.token.cp && (req.user.passStore !== Config.pass2store(req.token.suserId, req.body.currentPassword) ||
-                   req.token.suserId !== req.user.userId)) {
-    return error("Current password mismatch");
-  }
-
-  Db.getUser(req.token.suserId, function(err, user) {
-    if (err || !user.found) {
-      console.log("changePassword failed", err, user);
-      return error("Unknown user");
-    }
-    user = user._source;
-    user.passStore = Config.pass2store(user.userId, req.body.newPassword);
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("changePassword error", err, info);
-        return error("Update failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Changed password successfully"}));
-    });
-  });
-});
-
 app.post('/changeSettings', checkToken, function(req, res) {
   function error(text) {
     return res.send(JSON.stringify({success: false, text: text}));
@@ -4558,80 +4615,6 @@ app.post('/changeSettings', checkToken, function(req, res) {
         return error("Change settings update failed");
       }
       return res.send(JSON.stringify({success: true, text: "Changed password successfully"}));
-    });
-  });
-});
-
-app.post('/updateView', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.viewName || !req.body.viewExpression) {
-    return error("Missing viewName or viewExpression");
-  }
-
-  Db.getUser(req.token.suserId, function(err, user) {
-    if (err || !user.found) {
-      console.log("updateView failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.views = user.views || {};
-    var container = user.views;
-    if (req.body.groupName) {
-      req.body.groupName = req.body.groupName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-      if (!user.views._groups) {
-        user.views._groups = {};
-      }
-      if (!user.views._groups[req.body.groupName]) {
-        user.views._groups[req.body.groupName] = {};
-      }
-      container = user.views._groups[req.body.groupName];
-    }
-    req.body.viewName = req.body.viewName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-    if (container[req.body.viewName]) {
-      container[req.body.viewName].expression = req.body.viewExpression;
-    } else {
-      container[req.body.viewName] = {expression: req.body.viewExpression};
-    }
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("updateView error", err, info);
-        return error("Create View update failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Updated view successfully"}));
-    });
-  });
-});
-
-app.post('/deleteView', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.view) {
-    return error("Missing view");
-  }
-
-  Db.getUser(req.token.suserId, function(err, user) {
-    if (err || !user.found) {
-      console.log("deleteView failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.views = user.views || {};
-    delete user.views[req.body.view];
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("deleteView error", err, info);
-        return error("Create View update failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Deleted view successfully"}));
     });
   });
 });
@@ -4695,50 +4678,6 @@ app.post('/user/views/delete', checkCookieToken, function(req, res) {
         return error("Delete view failed");
       }
       return res.send(JSON.stringify({success: true, text: "Deleted view successfully"}));
-    });
-  });
-});
-
-app.post('/user/views/create', checkCookieToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.viewName)   { return error("Missing view name"); }
-  if (!req.body.expression) { return error("Missing view expression"); }
-
-  Db.getUser(req.token.userId, function(err, user) {
-    if (err || !user.found) {
-      console.log("Create view failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.views = user.views || {};
-    var container = user.views;
-    if (req.body.groupName) {
-      req.body.groupName = req.body.groupName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-      if (!user.views._groups) {
-        user.views._groups = {};
-      }
-      if (!user.views._groups[req.body.groupName]) {
-        user.views._groups[req.body.groupName] = {};
-      }
-      container = user.views._groups[req.body.groupName];
-    }
-    req.body.viewName = req.body.viewName.replace(/[^-a-zA-Z0-9_: ]/g, "");
-    if (container[req.body.viewName]) {
-      container[req.body.viewName].expression = req.body.expression;
-    } else {
-      container[req.body.viewName] = {expression: req.body.expression};
-    }
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("Create view error", err, info);
-        return error("Create view failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Created view successfully", views:user.views}));
     });
   });
 });
@@ -4937,98 +4876,14 @@ app.post('/user/update', checkCookieToken, function(req, res) {
   });
 });
 
-app.post('/cronQueries.json', checkToken, function(req, res) {
-  var results = [];
-  Db.search("queries", "query", {size:1000, query: {term: {creator: req.user.userId}}}, function (err, data) {
-    if (err || !data.hits || !data.hits.hits) {
-      return res.send(JSON.stringify(results));
-    }
-
-    for (var i = 0, ilen = data.hits.hits.length; i < ilen; i++) {
-      results.push(data.hits.hits[i]._source);
-    }
-
-    res.send(JSON.stringify(results));
-  });
-});
-
-app.post('/updateCronQuery', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.key || !req.body.name || req.body.query === undefined || !req.body.action) {
-    return error("Missing required parameter");
-  }
-
-  var document = {
-    doc: {
-      enabled: (req.body.enabled === "true"),
-      name:req.body.name,
-      query: req.body.query,
-      tags: req.body.tags,
-      action: req.body.action
-    }
-  };
-
-  if (req.body.key === "_create_") {
-    if (req.body.since === "-1") {
-      document.doc.lpValue =  document.doc.lastRun = 0;
-    } else {
-      document.doc.lpValue =  document.doc.lastRun = Math.floor(Date.now()/1000) - 60*60*parseInt(req.body.since || "0", 10);
-    }
-    document.doc.count = 0;
-    document.doc.creator = req.user.userId || "anonymous";
-    Db.indexNow("queries", "query", null, document.doc, function(err, info) {
-      if (Config.get("cronQueries", false)) {
-        processCronQueries();
-      }
-      return res.send(JSON.stringify({success: true, text: "Created", key: info._id}));
-    });
-    return;
-  }
-
-  Db.get("queries", 'query', req.body.key, function(err, sq) {
-    if (err || !sq.found) {
-      console.log("updateCronQuery failed", err, sq);
-      return error("Unknown query");
-    }
-
-    Db.update('queries', 'query', req.body.key, document, {refresh: 1}, function(err, data) {
-      if (err) {
-        console.log("updateCronQuery error", err, document, data);
-        return error("Cron query update failed");
-      }
-      if (Config.get("cronQueries", false)) {
-        processCronQueries();
-      }
-      return res.send(JSON.stringify({success: true, text: "Updated cron query successfully"}));
-    });
-  });
-});
-
-app.post('/deleteCronQuery', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.key) {
-    return error("Missing cron query key");
-  }
-
-  Db.deleteDocument("queries", 'query', req.body.key, {refresh: 1}, function(err, sq) {
-    res.send(JSON.stringify({success: true, text: "Deleted view successfully"}));
-  });
-});
-
-app.post('/tableState/:tablename', function(req, res) {
+app.post('/state/:name', function(req, res) {
   function error(text) {
     return res.send(JSON.stringify({success: false, text: text}));
   }
 
   Db.getUser(req.user.userId, function(err, user) {
     if (err || !user.found) {
-      console.log("save tableState failed", err, user);
+      console.log("save state failed", err, user);
       return error("Unknown user");
     }
     user = user._source;
@@ -5036,28 +4891,28 @@ app.post('/tableState/:tablename', function(req, res) {
     if (!user.tableStates) {
       user.tableStates = {};
     }
-    user.tableStates[req.params.tablename] = req.body;
+    user.tableStates[req.params.name] = req.body;
     Db.setUser(user.userId, user, function(err, info) {
       if (err) {
-        console.log("tableState error", err, info);
-        return error("tableState update failed");
+        console.log("state error", err, info);
+        return error("state update failed");
       }
-      return res.send(JSON.stringify({success: true, text: "updated table state successfully"}));
+      return res.send(JSON.stringify({success: true, text: "updated state successfully"}));
     });
   });
 });
 
-app.get('/tableState/:tablename', function(req, res) {
+app.get('/state/:name', function(req, res) {
   Db.getUserCache(req.user.userId, function(err, user) {
     if (err || !user.found) {
       console.log("Unknown user", err, user);
       return res.send("{}");
     }
     user = user._source;
-    if (!user.tableStates || !user.tableStates[req.params.tablename]) {
+    if (!user.tableStates || !user.tableStates[req.params.name]) {
       return res.send("{}");
     }
-    return res.send(user.tableStates[req.params.tablename]);
+    return res.send(user.tableStates[req.params.name]);
   });
 });
 
@@ -5474,7 +5329,8 @@ app.post('/scrub', function(req, res) {
       scrubList(req, res, false, list);
     });
   } else {
-    res.end("Missing expression or list of ids");
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Error: Missing expression. An expression is required so you don\'t scrub everything.' }));
   }
 });
 
@@ -5494,7 +5350,8 @@ app.post('/delete', function(req, res) {
       scrubList(req, res, true, list);
     });
   } else {
-    res.end("Missing expression or list of ids");
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Error: Missing expression. An expression is required so you don\'t delete everything.' }));
   }
 });
 
@@ -5568,7 +5425,7 @@ function sendSessionWorker(options, cb) {
     }
 
     var info = url.parse(sobj.url + "/receiveSession?saveId=" + options.saveId);
-    addAuth(info, options.user, options.nodeName, sobj.passwordSecret);
+    addAuth(info, options.user, options.nodeName, sobj.serverSecret || sobj.passwordSecret);
     info.method = "POST";
 
     var result = "";
@@ -5619,7 +5476,9 @@ app.get('/:nodeName/sendSession/:id', checkProxyRequest, function(req, res) {
     nodeName: req.params.nodeName
   };
 
-  internals.sendSessionQueue.push(options, res.end);
+  internals.sendSessionQueue.push(options, function () {
+    res.end();
+  });
 });
 
 app.post('/:nodeName/sendSessions', checkProxyRequest, function(req, res) {
@@ -5956,9 +5815,9 @@ app.post('/sendSessions', function(req, res) {
   }
 });
 
-app.post('/upload', function(req, res) {
+app.post('/upload', multer({dest:'/tmp'}).single('file'), function (req, res) {
   var exec = require('child_process').exec,
-      child;
+     child;
 
   var tags = "";
   if (req.body.tag) {
@@ -5971,10 +5830,10 @@ app.post('/upload', function(req, res) {
   }
 
   var cmd = Config.get("uploadCommand")
-              .replace("{TAGS}", tags)
-              .replace("{NODE}", Config.nodeName())
-              .replace("{TMPFILE}", req.files.file.path)
-              .replace("{CONFIG}", Config.getConfigFile());
+     .replace("{TAGS}", tags)
+     .replace("{NODE}", Config.nodeName())
+     .replace("{TMPFILE}", req.file.path)
+     .replace("{CONFIG}", Config.getConfigFile());
   console.log("upload command: ", cmd);
   child = exec(cmd, function (error, stdout, stderr) {
     res.write("<b>" + cmd + "</b><br>");
@@ -5984,7 +5843,7 @@ app.post('/upload', function(req, res) {
     if (error !== null) {
       console.log("exec error: " + error);
     }
-    fs.unlink(req.files.file.path);
+    fs.unlink(req.file.path);
   });
 });
 
@@ -5998,20 +5857,59 @@ if (Config.get("regressionTests")) {
     Db.flushCache();
     res.send("{}");
   });
+  app.get('/processCronQueries', function(req, res) {
+    processCronQueries();
+    res.send("{}");
+  });
 }
 
-app.use(function(req,res) {
-  res.status(404);
-  // respond with html page
-  if (req.accepts('html')) {
-    return res.render('404.jade', {
-      user: req.user,
-      title: makeTitle(req, 'Error'),
-      titleLink: 'errorLink'
-    });
-  }
-  res.type('txt').send('Page not found');
+app.use('/cyberchef.htm', function(req, res) {
+  res.sendFile('./public/cyberchef.htm');
+});
 
+/* cyberchef endpoint - loads the src or dst packets for a session and
+ * sends them to cyberchef */
+app.get("/:nodeName/session/:id/cyberchef", checkWebEnabled, checkProxyRequest, function(req, res) {
+  processSessionIdAndDecode(req.params.id, 10000, function(err, session, results) {
+    if (err) { return res.send("Error"); }
+
+    let data = '';
+    for (var i = (req.query.type !== 'dst'?0:1), ilen = results.length; i < ilen; i+=2) {
+      data += results[i].data.toString('hex');
+    }
+
+    res.render('cyberchef.pug', { value: data });
+  });
+});
+
+
+app.use(express.static(__dirname + '/views'));
+app.use(express.static(__dirname + '/bundle'));
+app.use(function (req, res) {
+  if (req.path === '/users' && !req.user.createEnabled) {
+    return res.status(403).send('Permission denied');
+  }
+
+  if (req.path === '/settings' && Config.get('demoMode', false)) {
+    return res.status(403).send('Permission denied');
+  }
+
+  // send cookie for basic, non admin functions
+  res.cookie(
+     'MOLOCH-COOKIE',
+     Config.obj2auth({date: Date.now(), pid: process.pid, userId: req.user.userId}),
+     { path: app.locals.basePath }
+  );
+
+  var theme = req.user.settings.theme || 'default-theme';
+  if (theme.startsWith('custom1')) { theme  = 'custom-theme'; }
+
+  res.render('app.pug', {
+    theme   : theme,
+    demoMode: Config.get('demoMode', false),
+    devMode : Config.get('devMode', false),
+    version : app.locals.molochversion
+  });
 });
 
 

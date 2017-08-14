@@ -1,7 +1,7 @@
 /******************************************************************************/
 /* writers.c  -- Functions dealing with writers
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -37,8 +37,7 @@ void moloch_writers_start(char *name) {
 
     HASH_FIND(s_, writersHash, name, str);
     if (!str) {
-        LOG("Couldn't find pcapWriteMethod %s implementation", name);
-        exit(0);
+        LOGEXIT("Couldn't find pcapWriteMethod %s implementation", name);
     }
     MolochWriterInit func = str->uw;
     func(name);
@@ -64,4 +63,5 @@ void moloch_writers_init()
     moloch_writers_add("thread", writer_disk_init);
     moloch_writers_add("thread-direct", writer_disk_init);
     moloch_writers_add("simple", writer_simple_init);
+    moloch_writers_add("simple-nodirect", writer_simple_init);
 }

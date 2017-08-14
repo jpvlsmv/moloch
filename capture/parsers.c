@@ -143,6 +143,8 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
             if (memcmp(data+8, "3g", 2) == 0) {
                 return moloch_field_string_add(field, session, "video/3gpp", 10, TRUE);
             }
+        } else if (memcmp(data, "\000\001\000\000\000", 5) == 0) {
+            return moloch_field_string_add(field, session, "application/x-font-ttf", 22, TRUE);
         }
         break;
     case '\032':
@@ -163,6 +165,32 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
             return moloch_field_string_add(field, session, "application/x-compress", 22, TRUE);
         }
         break;
+#ifdef OID_DECODE_SOMEDAY
+    case 0x30:
+        if (len > 100 && (gchar)data[1] == (gchar)0x82) {
+            MolochASNSeq_t seq[5];
+            int i;
+            int num = moloch_parsers_asn_get_sequence(seq, 5, (unsigned char *)data, len, TRUE);
+            for (i = 0; i < num; i++) {
+                if (seq[i].pc && seq[i].tag == 16) {
+                    BSB tbsb;
+                    BSB_INIT(tbsb, seq[i].value, seq[i].len);
+                    uint32_t ipc, itag, ilen;
+                    unsigned char *ivalue;
+                    ivalue = moloch_parsers_asn_get_tlv(&tbsb, &ipc, &itag, &ilen);
+                    if (itag != 6)
+                        continue;
+                    char oid[100];
+                    moloch_parsers_asn_decode_oid(oid, sizeof(oid), ivalue, ilen);
+                    printf("%s ", oid);
+                    moloch_print_hex_string(ivalue, ilen);
+                    if (ilen == 9 && memcmp(ivalue, "\x2a\x86\x48\x86\xf7\x0d\x01\x01\x05", 9) == 0) {
+                    }
+                }
+            }
+        }
+        break;
+#endif
     case '#':
         if (data[1] == '!') {
             return moloch_field_string_add(field, session, "text/x-shellscript", 18, TRUE);
@@ -186,6 +214,12 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
                     return moloch_field_string_add(field, session, "image/svg+xml", 13, TRUE);
                 }
                 return moloch_field_string_add(field, session, "text/xml", 8, TRUE);
+            }
+            break;
+        case 'B':
+        case 'b':
+            if (strncasecmp(data, "<body", 5) == 0) {
+                return moloch_field_string_add(field, session, "text/html", 9, TRUE);
             }
             break;
         case 'H':
@@ -273,6 +307,8 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
             if (memcmp(data+28, "\x80theora", 7) == 0) {
                 return moloch_field_string_add(field, session, "video/ogg", 9, TRUE);
             }
+        } else if (memcmp(data, "OTTO", 4) == 0) {
+            return moloch_field_string_add(field, session, "application/vnd.ms-opentype", 27, TRUE);
         }
         break;
     case 'P':
@@ -301,6 +337,11 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
             return moloch_field_string_add(field, session, "application/x-bittorrent", 24, TRUE);
         }
         break;
+    case 'w':
+        if (memcmp(data, "wOFF", 4) == 0) {
+            return moloch_field_string_add(field, session, "application/font-woff", 21, TRUE);
+        }
+        break;
     case '\x89':
         if (memcmp(data, "\x89PNG", 4) == 0) {
             return moloch_field_string_add(field, session, "image/png", 9, TRUE);
@@ -317,6 +358,14 @@ const char *moloch_parsers_magic_basic(MolochSession_t *session, int field, cons
         }
         break;
     } /* switch */
+
+    if (len > 257+5 && memcmp(data+257, "ustar", 5) == 0) {
+        return moloch_field_string_add(field, session, "application/x-tar", 17, TRUE);
+    }
+    if (moloch_memstr(data, len, "document.write", 14) ||
+        moloch_memstr(data, len, "'use strict'", 12)) {
+        return moloch_field_string_add(field, session, "text/javascript", 15, TRUE);
+    }
     return NULL;
 }
 /******************************************************************************/
@@ -894,13 +943,11 @@ void moloch_parsers_classifier_add(MolochClassifyHead_t *ch, MolochClassify_t *c
 void moloch_parsers_classifier_register_port_internal(const char *name, void *uw, uint16_t port, uint32_t type, MolochClassifyFunc func, size_t sessionsize, int apiversion)
 {
     if (sizeof(MolochSession_t) != sessionsize) {
-        LOG("Plugin '%s' built with different version of moloch.h\n %lu != %lu", name, sizeof(MolochSession_t),  sessionsize);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h\n %lu != %lu", name, sizeof(MolochSession_t),  sessionsize);
     }
 
     if (MOLOCH_API_VERSION != apiversion) {
-        LOG("Plugin '%s' built with different version of moloch.h\n %u %d", name, MOLOCH_API_VERSION, apiversion);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h\n %u %d", name, MOLOCH_API_VERSION, apiversion);
     }
 
     MolochClassify_t *c = MOLOCH_TYPE_ALLOC(MolochClassify_t);
@@ -925,13 +972,11 @@ void moloch_parsers_classifier_register_port_internal(const char *name, void *uw
 void moloch_parsers_classifier_register_tcp_internal(const char *name, void *uw, int offset, const unsigned char *match, int matchlen, MolochClassifyFunc func, size_t sessionsize, int apiversion)
 {
     if (sizeof(MolochSession_t) != sessionsize) {
-        LOG("Plugin '%s' built with different version of moloch.h\n %lu != %lu", name, sizeof(MolochSession_t),  sessionsize);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h\n %lu != %lu", name, sizeof(MolochSession_t),  sessionsize);
     }
 
     if (MOLOCH_API_VERSION != apiversion) {
-        LOG("Plugin '%s' built with different version of moloch.h\n %u %d", name, MOLOCH_API_VERSION, apiversion);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h\n %u %d", name, MOLOCH_API_VERSION, apiversion);
     }
 
     MolochClassify_t *c = MOLOCH_TYPE_ALLOC(MolochClassify_t);
@@ -959,13 +1004,11 @@ void moloch_parsers_classifier_register_tcp_internal(const char *name, void *uw,
 void moloch_parsers_classifier_register_udp_internal(const char *name, void *uw, int offset, const unsigned char *match, int matchlen, MolochClassifyFunc func, size_t sessionsize, int apiversion)
 {
     if (sizeof(MolochSession_t) != sessionsize) {
-        LOG("Plugin '%s' built with different version of moloch.h", name);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h", name);
     }
 
     if (MOLOCH_API_VERSION != apiversion) {
-        LOG("Plugin '%s' built with different version of moloch.h", name);
-        exit(-1);
+        LOGEXIT("Plugin '%s' built with different version of moloch.h", name);
     }
 
     MolochClassify_t *c = MOLOCH_TYPE_ALLOC(MolochClassify_t);
@@ -1026,6 +1069,8 @@ void moloch_parsers_classify_udp(MolochSession_t *session, const unsigned char *
             c->func(session, data, remaining, which, c->uw);
         }
     }
+
+    moloch_rules_run_after_classify(session);
 }
 /******************************************************************************/
 void moloch_parsers_classify_tcp(MolochSession_t *session, const unsigned char *data, int remaining, int which)
@@ -1065,4 +1110,6 @@ void moloch_parsers_classify_tcp(MolochSession_t *session, const unsigned char *
             c->func(session, data, remaining, which, c->uw);
         }
     }
+
+    moloch_rules_run_after_classify(session);
 }

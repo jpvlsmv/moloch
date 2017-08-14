@@ -140,6 +140,7 @@
       group: 'general',
       friendlyName: 'Info',
       help: 'Information',
+      unsortable: true,
       children: ['us', 'esrc', 'edst', 'esub', 'efn', 'dnsho', 'tls.alt', 'ircch']
     },
     'http.uri': { dbField: 'us', exp: 'http.uri' },
@@ -152,6 +153,19 @@
     'irc.channel': { dbField: 'ircch', exp: 'irc.channel' }
   };
 
+  let settings = {
+    timezone      : 'local',
+    detailFormat  : 'last',
+    showTimestamps: 'last',
+    sortColumn    : 'last',
+    sortDirection : 'asc',
+    spiGraph      : 'no',
+    connSrcField  : 'a1',
+    connDstField  : 'ip.dst:port',
+    numPackets    : 'last',
+    theme         : 'cotton-candy-theme'
+  };
+
   describe('Session List Component ->', function() {
 
     // load the module
@@ -160,7 +174,7 @@
     let scope, sessionComponent, sessionService, $httpBackend;
     let sessionsEndpoint    = 'sessions.json';
     let defaultParameters   = '?facets=1&flatten=1&fields=pr,tipv61-term,tipv62-term,fp,lp,a1,p1,a2,p2,pa,by,no,us,esrc,edst,esub,efn,dnsho,tls.alt,ircch&length=50&order=fp:asc';
-    let tableStateEndpoint  = 'tableState/sessionsNew';
+    let tableStateEndpoint  = 'state/sessionsNew';
 
     // Initialize and a mock scope
     beforeEach(inject(function(
@@ -178,21 +192,21 @@
         $httpBackend = _$httpBackend_;
 
         // initial query for table state
-        $httpBackend.expectGET(tableStateEndpoint)
+        $httpBackend.whenGET(tableStateEndpoint)
            .respond({});
 
-        $httpBackend.expectGET('user/settings')
-           .respond({});
+        $httpBackend.whenGET('user/settings')
+           .respond(settings);
 
-        $httpBackend.expectGET('user/columns')
+        $httpBackend.whenGET('user/columns')
           .respond({});
 
         // initial query for fields
-        $httpBackend.expectGET('fields')
+        $httpBackend.whenGET('fields')
            .respond(fields);
 
         // initial query for sessions
-        $httpBackend.expectGET(sessionsEndpoint + defaultParameters)
+        $httpBackend.whenGET(sessionsEndpoint + defaultParameters)
            .respond(sessionsJSON);
 
         scope = $rootScope.$new();
@@ -267,6 +281,7 @@
       sessionComponent.loadColumnConfiguration();
 
       expect(sessionComponent.tableState).toEqual(defaultTableState);
+      $httpBackend.flush();
     });
 
     it('should fetch the table state and remove empty entry in visible headers', function() {
@@ -291,8 +306,8 @@
       expect(sessionComponent.tableState).toEqual(tableState);
     });
 
-    it('should have smart user settings defaults', function() {
-      expect(sessionComponent.settings).toEqual({ timezone: 'local' });
+    it('should have settings', function() {
+      expect(sessionComponent.settings).toEqual(settings);
     });
 
     it('should toggle session detail', function() {
@@ -587,7 +602,7 @@
 
       it('should listen for "change:search" event', function() {
         let newParameters = '?date=-1&facets=1&flatten=1&fields=pr,tipv61-term,tipv62-term,fp,lp,a1,p1,a2,p2,pa,by,no,us,esrc,edst,esub,efn,dnsho,tls.alt,ircch&length=50&order=fp:asc';
-        $httpBackend.expectGET(sessionsEndpoint + newParameters)
+        $httpBackend.whenGET(sessionsEndpoint + newParameters)
           .respond(sessionsJSON);
 
         sub_scope.$emit('change:search', {
@@ -607,7 +622,7 @@
 
       it('should listen for "change:pagination" event', function() {
         let newParameters = '?facets=1&flatten=1&fields=pr,tipv61-term,tipv62-term,fp,lp,a1,p1,a2,p2,pa,by,no,us,esrc,edst,esub,efn,dnsho,tls.alt,ircch&length=200&order=fp:asc&start=200';
-        $httpBackend.expectGET(sessionsEndpoint + newParameters)
+        $httpBackend.whenGET(sessionsEndpoint + newParameters)
            .respond(sessionsJSON);
 
         sub_scope.$emit('change:pagination',

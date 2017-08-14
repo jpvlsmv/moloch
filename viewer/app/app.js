@@ -2,22 +2,25 @@
 
   'use strict';
 
-
-  require('./app.scss');
+  require('./app.css');
   require('angular-route');
   require('angular-filter');
   require('angular-animate');
   require('angular-resource');
   require('angular-sanitize');
+  require('angular-file-upload');
   require('angular-ui-bootstrap');
   require('angular-bind-notifier');
+  require('angular-bootstrap-colorpicker');
   require('ngdraggable');
+  require('ngclipboard');
   require('bootstrap/js/tooltip');
   require('bootstrap/js/dropdown');
   require('../public/flot-0.7/jquery.flot.js');
   require('../public/flot-0.7/jquery.flot.selection.js');
   require('../public/flot-0.7/jquery.flot.navigate.js');
   require('../public/flot-0.7/jquery.flot.resize.js');
+  require('../public/flot-0.7/jquery.flot.stack.js');
   require('../public/jquery-jvectormap-1.2.2.min.js');
   require('../public/jquery-jvectormap-world-en.js');
   require('../public/d3.min.js');
@@ -27,8 +30,9 @@
    */
   angular.module('moloch', [
     // angular dependencies
-    'ngResource', 'ngRoute', 'ui.bootstrap', 'ngAnimate',
+    'ngResource', 'ngRoute', 'ui.bootstrap', 'ngAnimate', 'colorpicker.module',
     'angular.filter', 'ngDraggable', 'ngSanitize', 'angular.bind.notifier',
+    'angularFileUpload', 'ngclipboard',
 
     // custom directives
     'directives.navbar', 'directives.footer',
@@ -37,10 +41,11 @@
     'directives.toast',
 
     // utilities
-    'moloch.util', 'moloch.config'
-  ])
+    'moloch.util', 'moloch.config',
 
-  .constant('molochVersion', require('../version'))
+    // moloch ui constants
+    'moloch.Constants'
+  ])
 
   // watch for rejection status -1 to let the user know the server is down
   .factory('myHttpInterceptor', ['$q', function($q) {
@@ -54,8 +59,8 @@
     };
   }])
 
-  .config(['$routeProvider','$locationProvider','$httpProvider','$compileProvider',
-    function($routeProvider, $locationProvider, $httpProvider, $compileProvider) {
+  .config(['$routeProvider','$locationProvider','$httpProvider','$compileProvider','Constants',
+    function($routeProvider, $locationProvider, $httpProvider, $compileProvider, Constants) {
       $routeProvider
         .when('/sessions', {
           title         : 'Sessions',
@@ -63,12 +68,14 @@
           reloadOnSearch: false
         })
         .when('/help', {
-          title    : 'Help',
-          template : '<moloch-help></moloch-help>'
+          title         : 'Help',
+          template      : '<moloch-help></moloch-help>',
+          reloadOnSearch: false
         })
         .when('/settings', {
-          title    : 'Settings',
-          template : '<moloch-settings></moloch-settings>'
+          title         : 'Settings',
+          template      : '<moloch-settings></moloch-settings>',
+          reloadOnSearch: false
         })
         .when('/files', {
           title         : 'Files',
@@ -90,12 +97,32 @@
           template      : '<moloch-spiview></moloch-spiview>',
           reloadOnSearch: false
         })
-        // default route is the sessions page
-        .otherwise({ redirectTo: '/sessions' });
+        .when('/connections', {
+          title         : 'Connections',
+          template      : '<moloch-connections></moloch-connections>',
+          reloadOnSearch: false
+        })
+        .when('/spigraph', {
+          title         : 'SPIGraph',
+          template      : '<moloch-spigraph></moloch-spigraph>',
+          reloadOnSearch: false
+        })
+        .when('/upload', {
+          title    : 'Upload',
+          template : '<moloch-upload></moloch-upload>',
+          reloadOnSearch: false
+        })
+        .otherwise({
+          title    : 'Not Found',
+          template : '<moloch-404></moloch-404>'
+        });
 
       $locationProvider.html5Mode(true); // activate HTML5 Mode
 
-      $compileProvider.debugInfoEnabled(false);
+      if (Constants) {
+        if (!Constants.devMode) { $compileProvider.debugInfoEnabled(false); }
+        else { console.log('%c Moloch Develoment Mode (>^_^)> ','background:#cc0863;color:white'); }
+      }
 
       $httpProvider.interceptors.push('myHttpInterceptor');
 

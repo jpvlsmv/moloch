@@ -1021,7 +1021,8 @@ void moloch_db_save_session(MolochSession_t *session, int final)
 
                 BSB_EXPORT_sprintf(jbsb, "\"notBefore\": %" PRId64 ",", certs->notBefore);
                 BSB_EXPORT_sprintf(jbsb, "\"notAfter\": %" PRId64 ",", certs->notAfter);
-                BSB_EXPORT_sprintf(jbsb, "\"diffDays\": %" PRId64 ",", (certs->notAfter - certs->notBefore)/(60*60*24));
+                if (certs->notAfter >= certs->notBefore)
+                    BSB_EXPORT_sprintf(jbsb, "\"diffDays\": %" PRId64 ",", (certs->notAfter - certs->notBefore)/(60*60*24));
 
                 BSB_EXPORT_rewind(jbsb, 1); // Remove last comma
 
@@ -1151,13 +1152,20 @@ uint64_t moloch_db_memory_size()
     int len = read(fd, buf, sizeof(buf));
     close(fd);
 
-    if (len <= 10)
+    if (len <= 10) {
+        LOG("/proc/self/statm file too small - %d '%.*s'", len, len, buf);
+
         return 0;
+    }
 
     buf[len] = 0;
 
     uint64_t size;
     sscanf(buf, "%ld", &size);
+
+    if (size == 0) {
+        LOG("/proc/self/statm size 0 - %d '%.*s'", len, len, buf);
+    }
 
     return getpagesize() * size;
 }
@@ -1410,19 +1418,21 @@ uint32_t moloch_db_get_sequence_number_sync(char *name)
     unsigned char      *version;
     uint32_t            version_len;
 
-    key_len = snprintf(key, sizeof(key), "/%ssequence/sequence/%s", config.prefix, name);
+    while (1) {
+        key_len = snprintf(key, sizeof(key), "/%ssequence/sequence/%s", config.prefix, name);
 
-    data = moloch_http_send_sync(esServer, "POST", key, key_len, "{}", 2, NULL, &data_len);
-    version = moloch_js0n_get(data, data_len, "_version", &version_len);
+        data = moloch_http_send_sync(esServer, "POST", key, key_len, "{}", 2, NULL, &data_len);
+        version = moloch_js0n_get(data, data_len, "_version", &version_len);
 
-    if (!version_len || !version) {
-        LOG("ERROR - Couldn't fetch sequence: %d %.*s", (int)data_len, (int)data_len, data);
-        free(data);
-        return moloch_db_get_sequence_number_sync(name);
-    } else {
-        uint32_t v = atoi((char *)version);
-        free(data);
-        return v;
+        if (!version_len || !version) {
+            LOG("ERROR - Couldn't fetch sequence: %d %.*s", (int)data_len, (int)data_len, data);
+            free(data);
+            continue;
+        } else {
+            uint32_t v = atoi((char *)version);
+            free(data);
+            return v;
+        }
     }
 }
 /******************************************************************************/
@@ -1484,8 +1494,7 @@ void moloch_db_load_file_num()
     if ((value = moloch_js0n_get(source, source_len, "num", &len))) {
         fileNum = atoi((char*)value);
     } else {
-        LOG("ERROR - No num field in %.*s", source_len, source);
-        exit (0);
+        LOGEXIT("ERROR - No num field in %.*s", source_len, source);
     }
     free(data);
 
@@ -1524,12 +1533,10 @@ void moloch_db_mkpath(char *path)
                 LOG("mkdir(%s)", path);
             }
             if (errno != ENOENT || (mkdir(path, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP) && errno != EEXIST)) {
-                LOG("mkdir() error for '%s': %s\n", path, strerror(errno));
-                exit(1);
+                LOGEXIT("mkdir() error for '%s': %s\n", path, strerror(errno));
             }
         } else if (!S_ISDIR(sb.st_mode)) {
-            LOG("Path '%s': %s ", path, strerror(ENOTDIR));
-            exit(1);
+            LOGEXIT("Path '%s': %s ", path, strerror(ENOTDIR));
         }
 
         if (!done)
@@ -1587,8 +1594,7 @@ char *moloch_db_create_file_full(time_t firstPacket, char *name, uint64_t size, 
 
         uint16_t flen = strlen(config.pcapDir[config.pcapDirPos]);
         if (flen >= sizeof(filename)-1) {
-            LOG("pcapDir %s is too large", config.pcapDir[config.pcapDirPos]);
-            exit(1);
+            LOGEXIT("pcapDir %s is too large", config.pcapDir[config.pcapDirPos]);
         }
 
         strcpy(filename, config.pcapDir[config.pcapDirPos]);
@@ -1603,8 +1609,7 @@ char *moloch_db_create_file_full(time_t firstPacket, char *name, uint64_t size, 
                 flen--;
 
             if ((tlen = strftime(filename+flen, sizeof(filename)-flen-1, config.pcapDirTemplate, tmp)) == 0) {
-                LOG("Couldn't form filename: %s %s", config.pcapDir[config.pcapDirPos], config.pcapDirTemplate);
-                exit(1);
+                LOGEXIT("Couldn't form filename: %s %s", config.pcapDir[config.pcapDirPos], config.pcapDirTemplate);
             }
             flen += tlen;
         }
@@ -1710,8 +1715,7 @@ void moloch_db_check()
     data = moloch_http_get(esServer, key, key_len, &data_len);
 
     if (!data || data_len == 0) {
-        LOG("ERROR - Couldn't load version information, database might be down or out of date.  Run \"db/db.pl host:port upgrade\"");
-        exit(1);
+        LOGEXIT("ERROR - Couldn't load version information, database might be down or out of date.  Run \"db/db.pl host:port upgrade\"");
     }
 
     uint32_t           version_len;
@@ -1720,8 +1724,7 @@ void moloch_db_check()
     version = moloch_js0n_get(data, data_len, "version", &version_len);
 
     if (!version || atoi((char*)version) < MOLOCH_MIN_DB_VERSION) {
-        LOG("ERROR - Database version '%.*s' is too old, needs to be at least (%d), run \"db/db.pl host:port upgrade\"", version_len, version, MOLOCH_MIN_DB_VERSION);
-        exit(1);
+        LOGEXIT("ERROR - Database version '%.*s' is too old, needs to be at least (%d), run \"db/db.pl host:port upgrade\"", version_len, version, MOLOCH_MIN_DB_VERSION);
     }
     free(data);
 
@@ -1729,8 +1732,7 @@ void moloch_db_check()
         key_len = snprintf(key, sizeof(key), "/_nodes/_local?settings&process&flat_settings");
         data = moloch_http_get(esServer, key, key_len, &data_len);
         if (strstr((char *)data, "\"http.compression\":\"true\"") == NULL) {
-            LOG("ERROR - need to add \"http.compression: true\" to elasticsearch yml file since \"compressES = true\" is set in moloch config");
-            exit(1);
+            LOGEXIT("ERROR - need to add \"http.compression: true\" to elasticsearch yml file since \"compressES = true\" is set in moloch config");
         }
         free(data);
     }
@@ -1859,12 +1861,18 @@ void moloch_db_free_tag_request(MolochTagRequest_t *r)
     }
 }
 /******************************************************************************/
-
-void moloch_db_tag_create_cb(int UNUSED(code), unsigned char *data, int UNUSED(data_len), gpointer uw)
+void moloch_db_tag_seq_cb(uint32_t newSeq, gpointer uw);
+void moloch_db_tag_create_cb(int code, unsigned char *data, int UNUSED(data_len), gpointer uw)
 {
     MolochTagRequest_t *r = uw;
     char                key[500];
     int                 key_len;
+
+    // Try again on error
+    if (code == 0) {
+        moloch_db_tag_seq_cb(r->newSeq, uw);
+        return;
+    }
 
     if (strstr((char *)data, "{\"error\":") != 0) {
         key_len = snprintf(key, sizeof(key), "/%stags/tag/%s", config.prefix, r->escaped);
@@ -2184,7 +2192,7 @@ void moloch_db_update_filesize(uint32_t fileid, uint64_t filesize)
 
     key_len = snprintf(key, sizeof(key), "/%sfiles/file/%s-%d/_update", config.prefix, config.nodeName, fileid);
 
-    json_len = snprintf(json, 1000, "{\"doc\": {\"filesize\": %lld}}", filesize);
+    json_len = snprintf(json, 1000, "{\"doc\": {\"filesize\": %" PRIu64 "}}", filesize);
 
     moloch_http_send(esServer, "POST", key, key_len, json, json_len, NULL, TRUE, NULL, NULL);
 }
@@ -2264,7 +2272,7 @@ void moloch_db_init()
         fprintf(stderr, "{\"sessions\": [\n");
     }
     if (!config.dryRun) {
-        esServer = moloch_http_create_server(config.elasticsearch, 9200, config.maxESConns, config.maxESRequests, config.compressES);
+        esServer = moloch_http_create_server(config.elasticsearch, config.maxESConns, config.maxESRequests, config.compressES);
     }
     DLL_INIT(t_, &tagRequests);
     HASH_INIT(tag_, tags, moloch_db_tag_hash, moloch_db_tag_cmp);

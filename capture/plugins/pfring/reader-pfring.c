@@ -1,6 +1,6 @@
 /* reader-pfring.c  -- pfring instead of libpcap
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -23,10 +23,8 @@
 #include "pcap.h"
 
 extern MolochConfig_t        config;
-extern MolochPcapFileHdr_t   pcapFileHeader;
 
 LOCAL pfring                *rings[MAX_INTERFACES];
-LOCAL struct bpf_program    *bpf_programs[MOLOCH_FILTER_MAX];
 
 /******************************************************************************/
 int reader_pfring_stats(MolochReaderStats_t *stats)
@@ -50,8 +48,7 @@ void reader_pfring_packet_cb(const struct pfring_pkthdr *h, const u_char *p, con
     MolochPacketBatch_t *batch = (MolochPacketBatch_t *)user_bytes;
 
     if (unlikely(h->caplen != h->len)) {
-        LOG("ERROR - Moloch requires full packet captures caplen: %d pktlen: %d", h->caplen, h->len);
-        exit (0);
+        LOGEXIT("ERROR - Moloch requires full packet captures caplen: %d pktlen: %d", h->caplen, h->len);
     }
 
     MolochPacket_t *packet = MOLOCH_TYPE_ALLOC0(MolochPacket_t);
@@ -87,49 +84,10 @@ static void *reader_pfring_thread(void *ringv)
     return NULL;
 }
 /******************************************************************************/
-int reader_pfring_should_filter(const MolochPacket_t *packet, enum MolochFilterType *type, int *index)
-{
-    int t, i;
-    for (t = 0; t < MOLOCH_FILTER_MAX; t++) {
-        for (i = 0; i < config.bpfsNum[t]; i++) {
-            if (bpf_filter(bpf_programs[t][i].bf_insns, packet->pkt, packet->pktlen, packet->pktlen)) {
-                *type = t;
-                *index = i;
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-/******************************************************************************/
 void reader_pfring_start() {
     int dlt_to_linktype(int dlt);
 
-    pcapFileHeader.linktype = 1;
-    pcapFileHeader.snaplen = MOLOCH_SNAPLEN;
-
-
-    pcap_t *dpcap = pcap_open_dead(pcapFileHeader.linktype, pcapFileHeader.snaplen);
-    int t;
-    for (t = 0; t < MOLOCH_FILTER_MAX; t++) {
-        if (config.bpfsNum[t]) {
-            int i;
-            if (bpf_programs[t]) {
-                for (i = 0; i < config.bpfsNum[t]; i++) {
-                    pcap_freecode(&bpf_programs[t][i]);
-                }
-            } else {
-                bpf_programs[t] = malloc(config.bpfsNum[t]*sizeof(struct bpf_program));
-            }
-            for (i = 0; i < config.bpfsNum[t]; i++) {
-                if (pcap_compile(dpcap, &bpf_programs[t][i], config.bpfs[t][i], 1, PCAP_NETMASK_UNKNOWN) == -1) {
-                    LOG("ERROR - Couldn't compile filter: '%s' with %s", config.bpfs[t][i], pcap_geterr(dpcap));
-                    exit(1);
-                }
-            }
-            moloch_reader_should_filter = reader_pfring_should_filter;
-        }
-    }
+    moloch_packet_set_linksnap(1, config.snapLen);
 
     int i;
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
@@ -156,21 +114,19 @@ void reader_pfring_init(char *UNUSED(name))
 
     int i;
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
-        rings[i] = pfring_open(config.interface[i], MOLOCH_SNAPLEN, flags);
+        rings[i] = pfring_open(config.interface[i], config.snapLen, flags);
 
         if (config.bpf) {
             int err = pfring_set_bpf_filter(rings[i], config.bpf);
 
             if (err < 0) {
-                LOG("pfring set filter error %d  for  %s", err, config.bpf);
-                exit (1);
+                LOGEXIT("pfring set filter error %d  for  %s", err, config.bpf);
             }
         }
 
 
         if (!rings[i]) {
-            LOG("pfring open failed! - %s", config.interface[i]);
-            exit(1);
+            LOGEXIT("pfring open failed! - %s", config.interface[i]);
         }
 
         pfring_set_cluster(rings[i], clusterId, cluster_per_flow_5_tuple);

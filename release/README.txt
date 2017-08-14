@@ -7,9 +7,9 @@ Basic Moloch Installation steps:
  2) Install package
  3) Configure basic moloch items (only need to do once)
      /data/moloch/bin/Configure
- 4a) If NOT using the demo Elasticsearch, download, install, start elasticsearch 2.4.0
-      http://download.elastic.co/elasticsearch/elasticsearch/elasticsearch-2.4.0.tar.gz
- 4b) If using the demo Elasticsearch
+ 4a) If NOT using the demo Elasticsearch, download, install, start elasticsearch 2.4.x or 5.4.x recommended
+      https://www.elastic.co/downloads/past-releases
+ 4b) If using the demo Elasticsearch, these won't work with real Elasticsearch installs
       /sbin/start elasticsearch # for upstart/Centos 6/Ubuntu 14.04
       systemctl start elasticsearch.service # for systemd/Centos 7/Ubuntu 16.04
  5) Initialize/Upgrade Elasticsearch Moloch configuration
@@ -20,10 +20,10 @@ Basic Moloch Installation steps:
  6) Add an admin user if a new install or after an init
       /data/moloch/bin/moloch_add_user.sh admin "Admin User" THEPASSWORD --admin
  7) Start everything
-   a) If using Centos 6 or Ubuntu 14.02:
+   a) If using upstart (Centos 6 or sometimes Ubuntu 14.04):
       /sbin/start molochcapture
       /sbin/start molochviewer
-   b) If using Centos 7 or Ubuntu 16.02
+   b) If using systemd (Centos 7 or Ubuntu 16.04 or sometimes Ubuntu 14.04)
       systemctl start molochcapture.service
       systemctl start molochviewer.service
  8) Look at log files for errors

@@ -1,4 +1,4 @@
-/* Copyright 2012-2016 AOL Inc. All rights reserved.
+/* Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -36,7 +36,7 @@ int irc_parser(MolochSession_t *session, void *uw, const unsigned char *data, in
                 irc->ircState &= ~ 0x1;
                 remaining -= (newline - data) +1;
                 data = newline+1;
-                while (*data == 0 && remaining > 0) { // Some irc clients have 0's after new lines
+                while (remaining > 0 && *data == 0) { // Some irc clients have 0's after new lines
                     remaining--;
                     data++;
                 }

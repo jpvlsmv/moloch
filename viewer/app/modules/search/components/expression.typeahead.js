@@ -15,14 +15,19 @@
 
     /**
      * Initialize global variables for this controller
-     * @param $routeParams Retrieve the current set of route parameters
-     * @param FieldService Retrieve fields
+     * @param $scope        Angular application model object
+     * @param $timeout      Angular's wrapper for window.setTimeout
+     * @param $location     Exposes browser address bar URL (based on the window.location)
+     * @param $routeParams  Retrieve the current set of route parameters
+     * @param FieldService  Retrieve fields
      *
      * @ngInject
      */
-    constructor($scope, $timeout, $routeParams, FieldService) {
+    constructor($scope, $timeout, $location, $rootScope, $routeParams, FieldService) {
       this.$scope       = $scope;
       this.$timeout     = $timeout;
+      this.$location    = $location;
+      this.$rootScope   = $rootScope;
       this.$routeParams = $routeParams;
       this.FieldService = FieldService;
     }
@@ -34,8 +39,6 @@
       this.results    = null; // typeahead results
       // the typeahead results menu
       this.resultsElement = angular.element(document.getElementById('typeahead-results'));
-
-      if (!this.query) { this.query = { value: '' }; }
 
       // get the available fields for autocompleting
       this.FieldService.get()
@@ -61,10 +64,10 @@
       this.$scope.$on('add:to:typeahead', (event, args) => {
         let newExpr = '';
 
-        if (!this.query.value) { this.query.value = ''; }
+        if (!this.$rootScope.expression) { this.$rootScope.expression = ''; }
 
-        if (this.query.value && this.query.value !== '') {
-          if (this.query.value[this.query.value.length - 1] !== ' ') {
+        if (this.$rootScope.expression && this.$rootScope.expression !== '') {
+          if (this.$rootScope.expression[this.$rootScope.expression.length - 1] !== ' ') {
             // if last char is not a space, add it
             newExpr += ' ';
           }
@@ -73,8 +76,13 @@
 
         newExpr += args.expression;
 
-        this.query.value += newExpr;
+        this.$rootScope.expression += newExpr;
       });
+    }
+
+    /* fired when controller's containing scope is destroyed */
+    $onDestroy() {
+      if (timeout) { this.$timeout.cancel(timeout); }
     }
 
 
@@ -83,6 +91,10 @@
     onOffFocus() {
       this.$timeout(() => {
         if (timeout) { this.$timeout.cancel(timeout); }
+
+        // if there's a request in progress, cancel it
+        this.cancelPromise();
+
         this.results    = null;
         this.activeIdx  = -1;
       }, 300);
@@ -90,157 +102,171 @@
 
     /* Fired when the search input is changed */
     debounceExprChange() {
+      this.cancelPromise();
       if (timeout) { this.$timeout.cancel(timeout); }
       timeout = this.$timeout(() => {
         this.changeExpression();
-      }, 300);
+      }, 500);
     }
 
     /* Displays appropriate autocomplete suggestions */
     changeExpression() {
-       this.activeIdx     = -1;
-       this.results       = null;
-       this.focusInput    = false;
-       this.loadingValues = false;
-       this.loadingError  = false;
+      this.activeIdx     = -1;
+      this.results       = null;
+      this.focusInput    = false;
+      this.loadingValues = false;
+      this.loadingError  = false;
 
-       // if the cursor is at a space
-       let spaceCP = (this.caretPos > 0 &&
-         this.caretPos === this.query.value.length &&
-         this.query.value[this.caretPos - 1] === ' ');
+      // if the cursor is at a space
+      let spaceCP = (this.caretPos > 0 &&
+        this.caretPos === this.$rootScope.expression.length &&
+        this.$rootScope.expression[this.caretPos - 1] === ' ');
 
-       let end    = this.caretPos;
-       let endLen = this.query.value.length;
-       for (end; end < endLen; ++end) {
-         if (this.query.value[end] === ' ') {
-           break;
-         }
-       }
+      let end    = this.caretPos;
+      let endLen = this.$rootScope.expression.length;
+      for (end; end < endLen; ++end) {
+        if (this.$rootScope.expression[end] === ' ') {
+          break;
+        }
+      }
 
-       let currentInput = this.query.value.substr(0, end);
-       tokens = ExpressionController.splitExpression(currentInput);
+      let currentInput = this.$rootScope.expression.substr(0, end);
+      tokens = ExpressionController.splitExpression(currentInput);
 
-       // add the space to the tokens
-       if (spaceCP) { tokens.push(' '); }
+      // add the space to the tokens
+      if (spaceCP) { tokens.push(' '); }
 
-       let lastToken = tokens[tokens.length - 1];
+      let lastToken = tokens[tokens.length - 1];
 
-       // display fields
-       if (tokens.length <= 1) {
-         this.results = ExpressionController.findMatch(lastToken, this.fields);
-         return;
-       }
+      // display fields
+      if (tokens.length <= 1) {
+        this.results = ExpressionController.findMatch(lastToken, this.fields);
+        return;
+      }
 
-       // display operators (depending on field type)
-       let token = tokens[tokens.length - 2];
-       let field = this.fields[token];
-       if (field) {
-         if (field.type === 'integer') {
-           // if at a space, show all operators
-           if(tokens[tokens.length - 1] === ' ') {
-             this.results = operations;
-           } else {
-             this.results = ExpressionController.findMatch(lastToken, operations);
-           }
-         } else { this.results = ['!=', '==']; }
+      // display operators (depending on field type)
+      let token = tokens[tokens.length - 2];
+      let field = this.fields[token];
+      if (field) {
+        if (field.type === 'integer') {
+          // if at a space, show all operators
+          if(tokens[tokens.length - 1] === ' ') {
+            this.results = operations;
+          } else {
+            this.results = ExpressionController.findMatch(lastToken, operations);
+          }
+        } else { this.results = ExpressionController.findMatch(lastToken, ['!=', '==']); }
 
-         return;
-       }
+        return;
+      }
 
-       // save the operator token for possibly adding 'EXISTS!' result
-       let operatorToken = token;
+      // save the operator token for possibly adding 'EXISTS!' result
+      let operatorToken = token;
 
-       token = tokens[tokens.length - 3];
-       field = this.fields[token];
+      token = tokens[tokens.length - 3];
+      field = this.fields[token];
 
-       if (!field) {
-         if (/^[!<=>]/.test(token)) {
-           // if at a space, show all operators
-           if(tokens[tokens.length - 1] === ' ') {
-             this.results = ['&&', '||'];
-           } else {
-             this.results = ExpressionController.findMatch(lastToken, ['&&', '||']);
-           }
-         } else {
-           this.results = ExpressionController.findMatch(lastToken, this.fields);
-         }
+      if (!field) {
+        if (/^[!<=>]/.test(token)) {
+          // if at a space, show all operators
+          if(tokens[tokens.length - 1] === ' ') {
+            this.results = ['&&', '||'];
+          } else {
+            this.results = ExpressionController.findMatch(lastToken, ['&&', '||']);
+          }
+        } else {
+          this.results = ExpressionController.findMatch(lastToken, this.fields);
+        }
 
-         return;
-       }
+        return;
+      }
 
-       // display values
-       // autocomplete country values
-       if (/^(country)/.test(token)) {
-         this.loadingValues = true;
-         this.FieldService.getCountryCodes()
-           .then((result) => {
-             this.loadingValues = false;
-             this.results = ExpressionController.findMatch(lastToken, result);
-             this.addExistsItem(lastToken, operatorToken);
-           })
-           .catch((error) => {
-             this.loadingValues = false;
-             this.loadingError  = error;
-           });
+      // regular expressions start with a forward slash
+      // lists start with an open square bracket
+      // don't issue query for these types of values
+      if (/^(\/|\[)/.test(lastToken)) { return; }
 
-         return;
-       }
+      // display values
+      // autocomplete country values
+      if (/^(country)/.test(token)) {
+        this.loadingValues = true;
+        this.FieldService.getCountryCodes()
+          .then((result) => {
+            this.loadingValues = false;
+            this.results = ExpressionController.findMatch(lastToken, result);
+            this.addExistsItem(lastToken, operatorToken);
+          })
+          .catch((error) => {
+            this.loadingValues = false;
+            this.loadingError  = error;
+          });
 
-       // autocomplete http.hasheader values after 1 char
-       if (lastToken.length >= 1) {
-         if (/^(tags|http.hasheader)/.test(token)) {
-           this.loadingValues = true;
-           this.FieldService.getHasheaderValues({type:token,filter:lastToken})
-             .then((result) => {
-               this.loadingValues = false;
-               this.results       = result;
-               this.addExistsItem(lastToken, operatorToken);
-               return;
-             })
-             .catch((error) => {
-               this.loadingValues = false;
-               this.loadingError  = error;
-             });
+        return;
+      }
 
-           return;
-         }
-       }
+      // autocomplete http.hasheader values after 1 char
+      if (lastToken.trim().length >= 1) {
+        if (/^(tags|http.hasheader)/.test(token)) {
+          this.loadingValues = true;
 
-       // autocomplete other values after 2 chars
-       if (lastToken.length >= 2) {
-         let params = { // build parameters for getting value(s)
-           autocomplete : true,
-           field        : field.dbField
-         };
+          this.promise = this.FieldService.getHasheaderValues({
+            type:token, filter:lastToken
+          });
 
-         if (this.$routeParams && this.$routeParams.date) {
-           params.date = this.$routeParams.date;
-         } else if (this.$routeParams.startTime && this.$routeParams.stopTime) {
-           params.startTime = this.$routeParams.startTime;
-           params.stopTime  = this.$routeParams.stopTime;
-         }
+          this.promise.then((result) => {
+            this.promise         = null;
+            if (result) {
+              this.loadingValues = false;
+              this.results       = result;
+              this.addExistsItem(lastToken, operatorToken);
+            }
+          }).catch((error) => {
+            this.promise       = null;
+            this.loadingValues = false;
+            this.loadingError  = error;
+          });
 
-         if (field.type === 'ip') {
-           params.expression = token + '==' + lastToken;
-         } else {
-           params.expression = token + '==' + lastToken + '*';
-         }
+          return;
+        }
+      }
 
-         this.loadingValues = true;
-         this.FieldService.getValues(params)
-           .then((result) => {
-             this.loadingValues = false;
-             this.results       = result;
-             this.addExistsItem(lastToken, operatorToken);
-             return;
-           })
-           .catch((error) => {
-             this.loadingValues = false;
-             this.loadingError  = error;
-           });
-       }
+      // autocomplete other values after 2 chars
+      if (lastToken.trim().length >= 2) {
+        let params = { // build parameters for getting value(s)
+          autocomplete : true,
+          field        : field.dbField
+        };
 
-       return;
+        if (this.$routeParams && this.$routeParams.date) {
+          params.date = this.$routeParams.date;
+        } else if (this.$routeParams.startTime && this.$routeParams.stopTime) {
+          params.startTime = this.$routeParams.startTime;
+          params.stopTime  = this.$routeParams.stopTime;
+        }
+
+        if (field.type === 'ip') {
+          params.expression = token + '==' + lastToken;
+        } else {
+          params.expression = token + '==' + lastToken + '*';
+        }
+
+        this.loadingValues = true;
+
+        this.promise = this.FieldService.getValues(params);
+
+        this.promise.then((result) => {
+          this.promise         = null;
+          if (result) {
+            this.loadingValues = false;
+            this.results       = result;
+            this.addExistsItem(lastToken, operatorToken);
+          }
+        }).catch((error) => {
+          this.promise       = null;
+          this.loadingValues = false;
+          this.loadingError  = error;
+        });
+      }
      }
 
     /**
@@ -251,8 +277,7 @@
       let str = val;
       if (val.exp) { str = val.exp; }
 
-      let newValue = ExpressionController.rebuildQuery(this.query.value, str);
-      this.query.value = newValue;
+      this.$rootScope.expression = ExpressionController.rebuildQuery(this.$rootScope.expression, str);
 
       this.results     = null;
       this.focusInput  = true; // re-focus on input
@@ -263,7 +288,7 @@
      * Removes the query text from the input
      */
     clear() {
-      this.query.value = null;
+      this.$rootScope.expression = null;
     }
 
     /**
@@ -274,10 +299,56 @@
      * @param {Object} event The keydown event fired by the input
      */
     keydown(event) {
+      event.stopPropagation();
+
       let target;
 
-      // there's nothing to do if there are no results in the dropdown menu
-      if (!this.results || this.results.length === 0) { return; }
+      // always check for escape before anything else
+      if (event.keyCode === 27) {
+        // if there's a request in progress, cancel it
+        this.cancelPromise();
+
+        this.loadingValues = false;
+        this.loadingError  = false;
+        this.results       = null;
+        this.activeIdx     = -1;
+
+        return;
+      }
+
+      // check for tab click when results are visible
+      if (this.results && this.results.length && event.keyCode === 9) {
+        event.preventDefault();
+
+        // if there is no item in the results is selected, use the first one
+        if (this.activeIdx < 0) { this.activeIdx = 0; }
+
+        let result = this.results[this.activeIdx];
+        if (result) { this.addToQuery(result); }
+
+        this.cancelPromise();
+
+        this.loadingValues = false;
+        this.loadingError  = false;
+        this.results       = null;
+        this.activeIdx     = -1;
+
+        return;
+      }
+
+      // if there are no results, just check for enter click to remove typeahead
+      if (!this.results || this.results.length === 0) {
+        if (event.keyCode === 13) {
+          this.cancelPromise();
+
+          this.loadingValues = false;
+          this.loadingError  = false;
+          this.results       = null;
+          this.activeIdx     = -1;
+        }
+
+        return;
+      }
 
       if (!this.activeIdx && this.activeIdx !== 0) { this.activeIdx = -1; }
 
@@ -302,10 +373,16 @@
            if (result) { this.addToQuery(result); }
          }
          break;
-       case 27: // escape
-         this.results   = null;
-         this.activeIdx = -1;
-         break;
+      }
+    }
+
+    /* aborts a pending promise */
+    cancelPromise() {
+      if (this.promise) {
+        this.promise.abort();
+        this.promise = null;
+
+        this.loadingValues = false;
       }
     }
 
@@ -329,7 +406,7 @@
       * @param {Object} values      Map or Array of values to compare against
       */
      static findMatch(strToMatch, values) {
-       if (!strToMatch || strToMatch === '') { return []; }
+       if (!strToMatch || strToMatch === '') { return null; }
 
        let results = [], exact = false;
 
@@ -351,6 +428,8 @@
 
        // put the exact match at the top (the rest are in the order received)
        if (exact) { results.unshift(exact); }
+
+       if (!results.length) { results = null; }
 
        return results;
      }
@@ -429,7 +508,8 @@
      }
   }
 
-  ExpressionController.$inject = ['$scope','$timeout','$routeParams','FieldService'];
+  ExpressionController.$inject = ['$scope','$timeout','$location','$rootScope',
+    '$routeParams','FieldService'];
 
   /**
    * Expression Typeahead Directive
@@ -438,8 +518,7 @@
   angular.module('directives.search')
     .component('expressionTypeahead', {
       template  : require('html!../templates/expression.typeahead.html'),
-      controller: ExpressionController,
-      bindings  : { query: '<' }
+      controller: ExpressionController
     });
 
 })();

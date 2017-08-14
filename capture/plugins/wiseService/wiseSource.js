@@ -34,6 +34,7 @@ function WISESource (api, section) {
   self.cacheMissStat = 0;
   self.cacheRefreshStat = 0;
   self.cacheDroppedStat = 0;
+  self.average100MS = 0;
 
   // Domain and Email wildcards to exclude from source
   ["excludeDomains", "excludeEmails", "excludeURLs"].forEach(function(type) {
@@ -344,7 +345,7 @@ WISESource.prototype.formatSetting = function () {
   return true;
 }
 //////////////////////////////////////////////////////////////////////////////////
-var typeName2Func = {ip: "getIp", domain: "getDomain", md5: "getMd5", email: "getEmail", url: "getURL"};
+var typeName2Func = {ip: "getIp", domain: "getDomain", md5: "getMd5", email: "getEmail", url: "getURL", tuple: "getTuple"};
 WISESource.prototype.typeSetting = function ()
 {
   this.type     = this.api.getConfig(this.section, "type");

@@ -20,7 +20,8 @@
       spiGraph        : 'no',
       connSrcField    : 'a1',
       connDstField    : 'ip.dst:port',
-      numPackets      : 'last'
+      numPackets      : 'last',
+      theme           : 'dark-theme'
     }
   };
 
@@ -53,7 +54,20 @@
   describe('Settings Component ->', function() {
 
     // load modules
-    beforeEach(angular.mock.module('moloch'));
+    beforeEach(function() {
+      angular.mock.module('moloch', function($provide) {
+        $provide.value('$window', {
+          getComputedStyle: () => {
+            return {
+              getPropertyValue: () => {
+                return '#000';
+              }
+            };
+          }
+        });
+        $provide.value('$document', angular.element(document));
+       });
+     });
 
     let scope, settingsCtrl, $httpBackend;
 
@@ -1087,7 +1101,8 @@
           spiGraph        : 'no',
           connSrcField    : 'p1',
           connDstField    : 'ip.dst',
-          numPackets      : '50'
+          numPackets      : '50',
+          theme           : 'default-theme'
         }
       };
 

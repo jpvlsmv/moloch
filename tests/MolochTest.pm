@@ -3,7 +3,7 @@ use Exporter;
 use strict;
 use Test::More;
 @MolochTest::ISA = qw(Exporter);
-@MolochTest::EXPORT = qw (esGet esPost esDelete esCopy viewerGet viewerGet2 viewerPost viewerPost2 viewerPostToken viewerPostToken2 countTest countTest2 errTest bin2hex getToken getToken2 mesGet mesPost multiGet getTokenCookie getTokenCookie2);
+@MolochTest::EXPORT = qw (esGet esPost esDelete esCopy viewerGet viewerGetToken viewerGet2 viewerPost viewerPost2 viewerPostToken viewerPostToken2 countTest countTest2 errTest bin2hex getToken getToken2 mesGet mesPost multiGet getTokenCookie getTokenCookie2);
 
 use LWP::UserAgent;
 use HTTP::Request::Common;
@@ -13,6 +13,7 @@ use Data::Dumper;
 
 $MolochTest::userAgent = LWP::UserAgent->new(timeout => 120);
 $MolochTest::host = "127.0.0.1";
+$MolochTest::elasticsearch = $ENV{ELASTICSEARCH} || "http://127.0.0.1:9200";
 
 
 ################################################################################
@@ -20,6 +21,15 @@ sub viewerGet {
 my ($url, $debug) = @_;
 
     my $response = $MolochTest::userAgent->get("http://$MolochTest::host:8123$url");
+    diag $url, " response:", $response->content if ($debug);
+    my $json = from_json($response->content);
+    return ($json);
+}
+################################################################################
+sub viewerGetToken {
+my ($url, $token, $debug) = @_;
+
+    my $response = $MolochTest::userAgent->get("http://$MolochTest::host:8123$url", "x-moloch-cookie" => $token);
     diag $url, " response:", $response->content if ($debug);
     my $json = from_json($response->content);
     return ($json);
@@ -109,7 +119,7 @@ my ($url, $content) = @_;
 sub esGet {
 my ($url) = @_;
 
-    my $response = $MolochTest::userAgent->get("http://$MolochTest::host:9200$url");
+    my $response = $MolochTest::userAgent->get("$MolochTest::elasticsearch$url");
     #print $url, " response:", $response->content;
     my $json = from_json($response->content);
     return ($json);
@@ -118,7 +128,7 @@ my ($url) = @_;
 sub esPost {
 my ($url, $content) = @_;
 
-    my $response = $MolochTest::userAgent->post("http://$MolochTest::host:9200$url", Content => $content);
+    my $response = $MolochTest::userAgent->post("$MolochTest::elasticsearch$url", Content => $content);
     #print $url, " response:", $response->content;
     my $json = from_json($response->content);
     return ($json);
@@ -127,7 +137,7 @@ my ($url, $content) = @_;
 sub esDelete {
 my ($url) = @_;
 
-    my $response = $MolochTest::userAgent->request(HTTP::Request::Common::_simple_req("DELETE", "http://$MolochTest::host:9200$url"));
+    my $response = $MolochTest::userAgent->request(HTTP::Request::Common::_simple_req("DELETE", "$MolochTest::elasticsearch$url"));
     #print $url, " response:", $response->content;
     my $json = from_json($response->content);
     return ($json);
@@ -222,3 +232,4 @@ sub getTokenCookie2 {
 }
 ################################################################################
 
+return 1;

@@ -37,13 +37,12 @@
 #define UNUSED(x) x __attribute((unused))
 
 
-#define MOLOCH_API_VERSION 18
+#define MOLOCH_API_VERSION 19
 
 #define MOLOCH_SESSIONID_LEN 37
 
 #define MOLOCH_V6_TO_V4(_addr) (((uint32_t *)(_addr).s6_addr)[3])
 
-#define MOLOCH_SNAPLEN 16384
 #define MOLOCH_PACKET_MAX_LEN 0x10000
 
 /******************************************************************************/
@@ -88,7 +87,7 @@ typedef HASH_VAR(s_, MolochStringHashStd_t, MolochStringHead_t, 13);
 typedef struct moloch_trie_node {
     void                     *data;
     struct moloch_trie_node **children;
-    char                      value, first, last;
+    uint8_t                   value, first, last;
 } MolochTrieNode_t;
 
 typedef struct moloch_trie {
@@ -194,6 +193,7 @@ typedef struct moloch_field_info {
     int                       pos;
     uint16_t                  type;
     uint16_t                  flags;
+    char                      ruleEnabled;
 } MolochFieldInfo_t;
 
 typedef struct {
@@ -259,7 +259,8 @@ typedef struct {
  * Configuration Information
  */
 enum MolochRotate { MOLOCH_ROTATE_HOURLY, MOLOCH_ROTATE_DAILY, MOLOCH_ROTATE_WEEKLY, MOLOCH_ROTATE_MONTHLY };
-enum MolochFilterType { MOLOCH_FILTER_DONT_SAVE, MOLOCH_FILTER_MIN_SAVE, MOLOCH_FILTER_MAX};
+
+#define MOLOCH_FIELDS_MAX 256
 
 typedef struct moloch_config {
     gboolean  quitting;
@@ -290,7 +291,7 @@ typedef struct moloch_config {
     int       writeMethod;
 
     HASH_VAR(s_, dontSaveTags, MolochStringHead_t, 11);
-    MolochFieldInfo_t *fields[256];
+    MolochFieldInfo_t *fields[MOLOCH_FIELDS_MAX];
     int                maxField;
     int                tagsField;
     int                tagsStringField;
@@ -317,9 +318,6 @@ typedef struct moloch_config {
     char     *dropGroup;
     char    **pluginsDir;
     char    **parsersDir;
-    char    **bpfs[MOLOCH_FILTER_MAX];
-    int      *bpfsVal[MOLOCH_FILTER_MAX];
-    int       bpfsNum[MOLOCH_FILTER_MAX];
 
     char    **rootPlugins;
     char    **plugins;
@@ -344,6 +342,7 @@ typedef struct moloch_config {
     uint32_t  maxFreeOutputBuffers;
     uint32_t  fragsTimeout;
     uint32_t  maxFrags;
+    uint32_t  snapLen;
 
     int       packetThreads;
 
@@ -617,6 +616,13 @@ extern MOLOCH_LOCK_EXTERN(LOG);
 
 
 /******************************************************************************/
+/* Simple bit macros, assuming uint64_t */
+
+#define BIT_ISSET(bit, bits) ((bits[bit/64] & (1 << (bit & 0x3f))) != 0)
+#define BIT_SET(bit, bits) bits[bit/64] |= (1 << (bit & 0x3f))
+#define BIT_CLR(bit, bits) bits[bit/64] &= ~(1 << (bit & 0x3f))
+
+/******************************************************************************/
 /*
  * main.c
  */
@@ -763,7 +769,7 @@ void moloch_http_exit();
 int moloch_http_queue_length(void *server);
 uint64_t moloch_http_dropped_count(void *server);
 
-void *moloch_http_create_server(const char *hostnames, int defaultPort, int maxConns, int maxOutstandingRequests, int compress);
+void *moloch_http_create_server(const char *hostnames, int maxConns, int maxOutstandingRequests, int compress);
 void moloch_http_set_header_cb(void *server, MolochHttpHeader_cb cb);
 void moloch_http_free_server(void *server);
 
@@ -843,6 +849,8 @@ void     moloch_packet_add_packet_ip(char *ip, int mode);
 void     moloch_packet_batch_init(MolochPacketBatch_t *batch);
 void     moloch_packet_batch_flush(MolochPacketBatch_t *batch);
 void     moloch_packet_batch(MolochPacketBatch_t * batch, MolochPacket_t * const packet);
+
+void     moloch_packet_set_linksnap(int linktype, int snaplen);
 
 
 /******************************************************************************/
@@ -1007,12 +1015,10 @@ typedef struct {
 typedef void (*MolochReaderInit)(char *name);
 typedef int  (*MolochReaderStats)(MolochReaderStats_t *stats);
 typedef void (*MolochReaderStart)();
-typedef int  (*MolochReaderFilter)(const MolochPacket_t *packet, enum MolochFilterType *type, int *index);
 typedef void (*MolochReaderStop)();
 
 extern MolochReaderStart moloch_reader_start;
 extern MolochReaderStats moloch_reader_stats;
-extern MolochReaderFilter moloch_reader_should_filter;
 extern MolochReaderStop moloch_reader_stop;
 
 
@@ -1021,6 +1027,29 @@ void moloch_readers_set(char *name);
 void moloch_readers_start();
 void moloch_readers_add(char *name, MolochReaderInit func);
 void moloch_readers_exit();
+
+/******************************************************************************/
+/*
+ * rules.c
+ */
+typedef enum {
+    MOLOCH_RULE_TYPE_EVERY_PACKET,
+    MOLOCH_RULE_TYPE_SESSION_SETUP,
+    MOLOCH_RULE_TYPE_AFTER_CLASSIFY,
+    MOLOCH_RULE_TYPE_FIELD_SET,
+    MOLOCH_RULE_TYPE_BEFORE_SAVE,
+    MOLOCH_RULE_TYPE_NUM
+
+} MolochRuleType;
+
+void moloch_rules_init();
+void moloch_rules_recompile();
+void moloch_rules_run_field_set(MolochSession_t *session, int pos, const gpointer value);
+int moloch_rules_run_every_packet(MolochPacket_t *packet);
+void moloch_rules_run_session_setup(MolochSession_t *session, MolochPacket_t *packet);
+void moloch_rules_run_after_classify(MolochSession_t *session);
+void moloch_rules_run_before_save(MolochSession_t *session, int final);
+void moloch_rules_exit();
 
 /******************************************************************************/
 /*
@@ -1043,3 +1072,4 @@ void *moloch_trie_del_reverse(MolochTrie_t *trie, const char *key, const int len
  * js0n.c
  */
 int js0n(unsigned char *js, unsigned int len, unsigned int *out);
+

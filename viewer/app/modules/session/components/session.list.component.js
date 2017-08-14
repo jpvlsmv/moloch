@@ -11,12 +11,12 @@
 
   const defaultTableState = {
     order         : [['fp', 'asc']],
-    visibleHeaders: ['fp', 'lp', 'src', 'p1', 'dst', 'p2', 'pa', 'dbby', 'no', 'info']
+    visibleHeaders: ['fp','lp','src','p1','dst','p2','pa','dbby','no','info']
   };
 
   let customCols = require('json!./custom.columns.json');
 
-  let holdingClick = false, timeout;
+  let holdingClick = false, initialized = false, timeout;
 
   /**
    * @class SessionListController
@@ -51,7 +51,7 @@
       this.UserService    = UserService;
 
       // offset anchor scroll position to account for navbars
-      this.$anchorScroll.yOffset = 140;
+      this.$anchorScroll.yOffset = 115;
     }
 
     /* Callback when component is mounted and ready */
@@ -64,25 +64,32 @@
 
       this.getTableState(); // IMPORTANT: kicks off the initial search query!
 
-      this.getUserSettings();
-
       this.getCustomColumnConfigurations();
+
+      if (this.$routeParams.length) {
+        _query.length = this.query.length = this.$routeParams.length;
+      }
 
       /* Listen! */
       // watch for pagination changes (from pagination.component)
       this.$scope.$on('change:pagination', (event, args) => {
         // pagination affects length, currentPage, and start
-        _query.length = this.query.length = args.length;
-        _query.start  = this.query.start  = args.start;
+        // only update vars and get data if something has changed
+        // this can be fired twice because there are 2 pagination controls
+        if (this.query.length !== args.length ||
+            this.query.start !== args.start ||
+            this.currentPage !== args.currentPage) {
+          _query.length = this.query.length = args.length;
+          _query.start  = this.query.start  = args.start;
 
-        this.currentPage = args.currentPage;
+          this.currentPage = args.currentPage;
 
-        this.getData();
+          this.getData();
+        }
       });
 
       // watch for search expression and date range changes
       // (from search.component)
-      let initialized;
       this.$scope.$on('change:search', (event, args) => {
         // either (startTime && stopTime) || date
         if (args.startTime && args.stopTime) {
@@ -105,7 +112,7 @@
         this.query.view = args.view;
 
         // don't issue search when the first change:search event is fired
-        if (!initialized) { initialized = true; return; }
+        if (!initialized || this.loading) { return; }
 
         this.getData();
       });
@@ -122,6 +129,13 @@
         this.$scope.$broadcast('update:time', args);
       });
     } /* /$onInit */
+
+    /* fired when controller's containing scope is destroyed */
+    $onDestroy() {
+      holdingClick = false;
+
+      if (timeout) { this.$timeout.cancel(timeout); }
+    }
 
 
     /* data retrieve/setup/update ------------------------------------------ */
@@ -182,6 +196,23 @@
       this.UserService.getSettings()
          .then((settings) => {
            this.settings = settings;
+
+           // if settings has custom sort field and the custom sort field
+           // exists in the table headers, apply it
+           if (this.settings && this.settings.sortColumn !== 'last' &&
+              this.tableState.visibleHeaders.indexOf(this.settings.sortColumn) > -1) {
+             this.query.sorts = [[this.settings.sortColumn, this.settings.sortDirection]];
+             this.tableState.order = this.query.sorts;
+           }
+
+           // IMPORTANT: kicks off the initial search query
+           if (!this.settings.manualQuery || initialized) { this.getData(); }
+           else {
+             this.loading  = false;
+             this.error    = 'Now, issue a query!';
+           }
+
+           initialized = true;
          })
          .catch((error) => {
            this.error = error;
@@ -190,7 +221,7 @@
 
     /* Gets the state of the table (sort order and column order/visibility) */
     getTableState() {
-      this.SessionService.getTableState()
+      this.SessionService.getState('sessionsNew')
          .then((response) => {
            this.tableState = response.data;
            if (Object.keys(this.tableState).length === 0) {
@@ -208,8 +239,7 @@
 
                 this.setupFields();
 
-                // IMPORTANT: kicks off the initial search query
-                this.getData();
+                this.getUserSettings();
               }).catch((error) => { this.error = error; });
          }).catch((error) => { this.error = error; });
     }
@@ -230,7 +260,7 @@
      * @param {bool} stopLoading Whether to stop the loading state when promise returns
      */
     saveTableState(stopLoading) {
-      this.SessionService.saveTableState(this.tableState)
+      this.SessionService.saveState(this.tableState, 'sessionsNew')
          .then(() => {
            if (stopLoading) { this.loading = false; }
          })
@@ -351,7 +381,7 @@
       }
 
       // unset open all for future queries
-      this.$location.search('openAll', null);
+      this.$location.search('openAll', null).replace();
     }
 
 
@@ -678,15 +708,34 @@
       return true;
     }
 
+    /**
+     * Opens the spi graph page in a new browser tab
+     * @param {string} fieldID The field id (dbField) to display spi graph data for
+     */
+    openSpiGraph(fieldID) {
+      this.SessionService.openSpiGraph(fieldID);
+    }
+
 
     /* UNIQUE VALUES */
     /**
      * Open a page to view unique values for different fields
-     * @param {string} dbField  The field to get unique values for
-     * @param {number} counts   1 or 0 whether to include counts of the values
+     * @param {string} exp    The field to get unique values for
+     * @param {number} counts 1 or 0 whether to include counts of the values
      */
-    exportUnique(dbField, counts) {
-      this.SessionService.exportUniqueValues(dbField, counts);
+    exportUnique(exp, counts) {
+      this.SessionService.exportUniqueValues(exp, counts);
+    }
+
+
+    /* MISC */
+    /**
+     * Determines whether a reference is an array
+     * @param {?} value   Reference to check
+     * @returns {boolean} True if value is an array
+     */
+    isArray(value) {
+      return angular.isArray(value);
     }
 
   }

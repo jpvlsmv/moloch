@@ -1,6 +1,6 @@
 /* reader-daq.c  -- daq instead of libpcap
  *
- * Copyright 2012-2016 AOL Inc. All rights reserved.
+ * Copyright 2012-2017 AOL Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
@@ -23,12 +23,9 @@
 #include "pcap.h"
 
 extern MolochConfig_t        config;
-extern MolochPcapFileHdr_t   pcapFileHeader;
 
 LOCAL const DAQ_Module_t    *module;
 LOCAL void                  *handles[MAX_INTERFACES];
-
-LOCAL struct bpf_program    *bpf_programs[MOLOCH_FILTER_MAX];
 
 /******************************************************************************/
 int reader_daq_stats(MolochReaderStats_t *stats)
@@ -50,11 +47,10 @@ int reader_daq_stats(MolochReaderStats_t *stats)
     return 0;
 }
 /******************************************************************************/
-DAQ_Verdict reader_daq_packet_cb(void *UNUSED(user), const DAQ_PktHdr_t *h, const uint8_t *data)
+DAQ_Verdict reader_daq_packet_cb(void *batch, const DAQ_PktHdr_t *h, const uint8_t *data)
 {
     if (unlikely(h->caplen != h->pktlen)) {
-        LOG("ERROR - Moloch requires full packet captures caplen: %d pktlen: %d", h->caplen, h->pktlen);
-        exit (0);
+        LOGEXIT("ERROR - Moloch requires full packet captures caplen: %d pktlen: %d", h->caplen, h->pktlen);
     }
 
     MolochPacket_t *packet = MOLOCH_TYPE_ALLOC0(MolochPacket_t);
@@ -63,15 +59,17 @@ DAQ_Verdict reader_daq_packet_cb(void *UNUSED(user), const DAQ_PktHdr_t *h, cons
     packet->ts            = h->ts;
     packet->pktlen        = h->pktlen;
 
-    moloch_packet(packet);
+    moloch_packet_batch((MolochPacketBatch_t *)batch, packet);
     return DAQ_VERDICT_PASS;
 }
 /******************************************************************************/
 static void *reader_daq_thread(gpointer handle)
 {
     while (1) {
-        int r = daq_acquire(module, handle, -1, reader_daq_packet_cb, NULL);
-        if (r)
+        MolochPacketBatch_t   batch;
+        moloch_packet_batch_init(&batch);
+        int r = daq_acquire(module, handle, 10000, reader_daq_packet_cb, &batch);
+        moloch_packet_batch_flush(&batch);
 
         // Some kind of failure we quit
         if (unlikely(r)) {
@@ -84,48 +82,11 @@ static void *reader_daq_thread(gpointer handle)
     return NULL;
 }
 /******************************************************************************/
-int reader_daq_should_filter(const MolochPacket_t *packet, enum MolochFilterType *type, int *index)
-{
-    int t, i;
-    for (t = 0; t < MOLOCH_FILTER_MAX; t++) {
-        for (i = 0; i < config.bpfsNum[t]; i++) {
-            if (bpf_filter(bpf_programs[t][i].bf_insns, packet->pkt, packet->pktlen, packet->pktlen)) {
-                *type = t;
-                *index = i;
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-/******************************************************************************/
 void reader_daq_start() {
     int err;
 
     //ALW - Bug: assumes all linktypes are the same
-    pcapFileHeader.linktype = daq_get_datalink_type(module, handles[0]);
-    pcapFileHeader.snaplen = MOLOCH_SNAPLEN;
-    pcap_t *dpcap = pcap_open_dead(pcapFileHeader.linktype, pcapFileHeader.snaplen);
-    int t;
-    for (t = 0; t < MOLOCH_FILTER_MAX; t++) {
-        if (config.bpfsNum[t]) {
-            int i;
-            if (bpf_programs[t]) {
-                for (i = 0; i < config.bpfsNum[t]; i++) {
-                    pcap_freecode(&bpf_programs[t][i]);
-                }
-            } else {
-                bpf_programs[t] = malloc(config.bpfsNum[t]*sizeof(struct bpf_program));
-            }
-            for (i = 0; i < config.bpfsNum[t]; i++) {
-                if (pcap_compile(dpcap, &bpf_programs[t][i], config.bpfs[t][i], 1, PCAP_NETMASK_UNKNOWN) == -1) {
-                    LOG("ERROR - Couldn't compile filter: '%s' with %s", config.bpfs[t][i], pcap_geterr(dpcap));
-                    exit(1);
-                }
-            }
-            moloch_reader_should_filter = reader_daq_should_filter;
-        }
-    }
+    moloch_packet_set_linksnap(daq_get_datalink_type(module, handles[0]), config.snapLen);
 
     int i;
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
@@ -133,16 +94,14 @@ void reader_daq_start() {
             err = daq_set_filter(module, handles[i], config.bpf);
 
             if (err) {
-                LOG("DAQ set filter error %d %s for  %s", err, daq_get_error(module, handles[i]), config.bpf);
-                exit (1);
+                LOGEXIT("DAQ set filter error %d %s for  %s", err, daq_get_error(module, handles[i]), config.bpf);
             }
         }
 
         err = daq_start(module, handles[i]);
 
         if (err) {
-            LOG("DAQ start error %d %s", err, daq_get_error(module, handles[i]));
-            exit (1);
+            LOGEXIT("DAQ start error %d %s", err, daq_get_error(module, handles[i]));
         }
 
         char name[100];
@@ -171,14 +130,12 @@ void reader_daq_init(char *UNUSED(name))
 
     err = daq_load_modules((const char **)dirs);
     if (err) {
-        LOG("Can't load DAQ modules = %d\n", err);
-        exit(1);
+        LOGEXIT("Can't load DAQ modules = %d\n", err);
     }
 
     module = daq_find_module(moduleName);
     if (!module) {
-        LOG("Can't find %s DAQ module\n", moduleName);
-        exit(1);
+        LOGEXIT("Can't find %s DAQ module\n", moduleName);
     }
 
 
@@ -186,7 +143,7 @@ void reader_daq_init(char *UNUSED(name))
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
         memset(&cfg, 0, sizeof(cfg));
         cfg.name = config.interface[i];
-        cfg.snaplen = MOLOCH_SNAPLEN;
+        cfg.snaplen = config.snapLen;
         cfg.timeout = -1;
         cfg.mode = DAQ_MODE_PASSIVE;
 
@@ -194,8 +151,7 @@ void reader_daq_init(char *UNUSED(name))
         err = daq_initialize(module, &cfg, &handles[i], buf, sizeof(buf));
 
         if (err) {
-            LOG("Can't initialize DAQ %s %d %s\n", config.interface[i], err, buf);
-            exit(1);
+            LOGEXIT("Can't initialize DAQ %s %d %s\n", config.interface[i], err, buf);
         }
     }
 

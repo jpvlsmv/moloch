@@ -9,6 +9,7 @@
   angular.module('moloch.util', [])
 
 
+   /* FILTERS -------------------------------------------------------------- */
    .filter('commaString', () => {
      return (input) => {
        if (isNaN(input)) { return '0'; }
@@ -82,7 +83,6 @@
       };
     })
 
-
     /**
      * Turns milliseconds into a human readable time range
      * Output example: 1 day 10:42:01
@@ -118,7 +118,6 @@
         return result || '0';
       };
     })
-
 
     /**
      * Field filter
@@ -160,7 +159,7 @@
      * Sets every letter to lower case in a string
      *
      * @example
-     * '{{someString | capitalize}}'
+     * '{{someString | lowercase}}'
      */
      .filter('lowercase', function() {
        return function(input) {
@@ -209,13 +208,14 @@
     /**
      * humanReadable filter
      * Returns the <=4 char human readable version of bytes
+     * (Should be called humanReadableBytes)
      *
      * Modified http://stackoverflow.com/questions/10420352/converting-file-size-in-bytes-to-human-readable
      */
     .filter('humanReadable', function () {
       return function (fileSizeInBytes) {
         var i = 0;
-        var byteUnits = ['B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+        var byteUnits = ['Bi', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi', 'Yi'];
         while (fileSizeInBytes >= 1000) {
             fileSizeInBytes = fileSizeInBytes / 1024;
             i++;
@@ -229,6 +229,86 @@
        };
      })
 
+    /**
+     * humanReadableNumber filter
+     * Returns the <=4 char human readable version of bytes
+     *
+     * Modified http://stackoverflow.com/questions/10420352/converting-file-size-in-bytes-to-human-readable
+     */
+    .filter('humanReadableNumber', function () {
+      return function (num) {
+        var i = 0;
+        var units = [' ', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+        while (num >= 1000) {
+            num = num / 1000;
+            i++;
+        }
+
+        if (i === 0 || num >= 10) {
+          return num.toFixed(0) + units[i];
+        } else {
+          return num.toFixed(1) + units[i];
+        }
+       };
+     })
+
+    /**
+     * Builds a url with the existing parameters and updates the expression
+     * parameter with what's in the search expression input box.
+     * The url needs to be constructed this way so that there is only one entry
+     * in the browser history (rather than two, one for updating the expression
+     * parameter and one for changing the tab/page).
+     *
+     * @example
+     * $filter('buildUrl')('sessions')
+     * '{{'sessions' | buildUrl}}'
+     *
+     * @param {string} link             The base url to send the user to
+     * @param {string} additionalExpr   Expression to add to query
+     */
+     .filter('buildUrl', ['$rootScope','$routeParams',
+      function($rootScope, $routeParams) {
+        return function (link, additionalExpr) {
+          let newUrl = link;
+          let paramLen = Object.keys($routeParams).length;
+          let count = 1;
+          if (paramLen > 0) {
+            newUrl += '?';
+            for (let key in $routeParams) {
+              if ($routeParams.hasOwnProperty(key)) {
+                let param = $routeParams[key];
+                if (key !== 'expression') {
+                  newUrl += `${key}=${encodeURIComponent(param)}`;
+                  if (count !== paramLen) {
+                    newUrl += '&';
+                  }
+                }
+                ++count;
+              }
+            }
+          }
+
+          if ($rootScope.expression) {
+            if (paramLen > 0) { newUrl += '&'; }
+            else { newUrl += '?'; }
+
+            let expression = $rootScope.expression;
+            if (additionalExpr) { expression += ` && ${additionalExpr}`; }
+
+            newUrl += `expression=${encodeURIComponent(expression)}`;
+          } else if (additionalExpr) {
+            if (paramLen > 0) { newUrl += '&'; }
+            else { newUrl += '?'; }
+            newUrl += `expression=${encodeURIComponent(additionalExpr)}`;
+          }
+
+          return newUrl;
+        };
+      }
+    ])
+
+
+    /* DIRECTIVES ---------------------------------------------------------- */
     /**
      * Convert To Number Directive
      * Parses strings to integers
@@ -297,10 +377,11 @@
       return {
         restrict: 'A',
         scope   : { caretPos: '=', },
-        link    : function(scope, element, attrs) {
+        link    : function(scope, element) {
           if (!scope.caretPos) { scope.caretPos = 0; }
-          element.on('keydown keyup click', function(event) {
-            scope.$apply(function() {
+
+          let setCaretPos = () => {
+            scope.$apply(function () {
               if ('selectionStart' in element[0]) {
                 scope.caretPos = element[0].selectionStart;
               } else if (document.selection) {
@@ -312,6 +393,14 @@
                 scope.caretPos = selection.text.length - selectionLen;
               }
             });
+          };
+
+          // register listener
+          element.on('keydown keyup click', setCaretPos);
+
+          // cleanup listener
+          scope.$on('$destroy', () => {
+            element.off('keydown keyup click', setCaretPos);
           });
         }
       };

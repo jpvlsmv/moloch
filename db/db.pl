@@ -41,6 +41,7 @@
 # 32 - Require ES >= 2.4 or ES >= 5.1.2, tags_v3, queries_v1, fields_v1, users_v4, files_v4, sequence_v1
 # 33 - user columnConfigs
 # 34 - stats_v2
+# 35 - user spiviewFieldConfigs
 
 use HTTP::Request::Common;
 use LWP::UserAgent;
@@ -49,12 +50,13 @@ use Data::Dumper;
 use POSIX;
 use strict;
 
-my $VERSION = 34;
+my $VERSION = 35;
 my $verbose = 0;
 my $PREFIX = "";
 my $NOCHANGES = 0;
 my $SHARDS = -1;
 my $REPLICAS = -1;
+my $NOOPTIMIZE = 0;
 
 ################################################################################
 sub MIN ($$) { $_[$_[0] > $_[1]] }
@@ -100,8 +102,9 @@ sub showHelp($)
     print "       type                    - Same as rotateIndex in ini file = hourly,daily,weekly,monthly\n";
     print "       num                     - number of indexes to keep\n";
     print "    --replicas <num>           - Number of replicas for older sessions indices, default 0\n";
-    print "  field disable <exp >         - disable a field from being indexed\n";
-    print "  field enable <exp >          - enable a field from being indexed\n";
+    print "    --nooptimize               - Do not optimize session indexes during this operation\n";
+    print "  field disable <exp>          - disable a field from being indexed\n";
+    print "  field enable <exp>           - enable a field from being indexed\n";
     exit 1;
 }
 ################################################################################
@@ -202,6 +205,8 @@ sub esCopy
 {
     my ($srci, $dsti) = @_;
 
+    $main::userAgent->timeout(3600);
+
     my $status = esGet("/_stats", 1);
     print "Copying " . $status->{indices}->{$PREFIX . $srci}->{primaries}->{docs}->{count} . " elements from ${PREFIX}$srci to ${PREFIX}$dsti\n";
 
@@ -214,7 +219,8 @@ sub esCopy
         die "ERROR - Copy failed from $srci to $dsti\n";
     }
 
-    print "\n"
+    print "\n";
+    $main::userAgent->timeout(30);
 }
 ################################################################################
 sub esScroll
@@ -1729,6 +1735,10 @@ sub usersUpdate
         "type": "object",
         "dynamic": "true"
       },
+      "spiviewFieldConfigs": {
+        "type": "object",
+        "dynamic": "true"
+      },
       "tableStates": {
         "type": "object",
         "dynamic": "true"
@@ -1805,6 +1815,11 @@ sub dbESVersion {
     my $esversion = esGet("/");
     my @parts = split(/\./, $esversion->{version}->{number});
     $main::esVersion = int($parts[0]*100*100) + int($parts[1]*100) + int($parts[2]);
+    if ($main::esVersion >= 50000) {
+        $main::OPTIMIZE = "_forcemerge";
+    } else {
+        $main::OPTIMIZE = "_optimize";
+    }
     return $esversion;
 }
 ################################################################################
@@ -1836,8 +1851,8 @@ sub dbCheckForActivity {
     die "Some capture nodes still active" if ($json1->{hits}->{total} != $json2->{hits}->{total});
     return if ($json1->{hits}->{total} == 0);
 
-    my @hits1 = sort {$a->{_source}->{_id} cmp $b->{_source}->{_id}} @{$json1->{hits}->{hits}};
-    my @hits2 = sort {$a->{_source}->{_id} cmp $b->{_source}->{_id}} @{$json2->{hits}->{hits}};
+    my @hits1 = sort {$a->{_source}->{nodeName} cmp $b->{_source}->{nodeName}} @{$json1->{hits}->{hits}};
+    my @hits2 = sort {$a->{_source}->{nodeName} cmp $b->{_source}->{nodeName}} @{$json2->{hits}->{hits}};
 
     for (my $i = 0; $i < $json1->{hits}->{total}; $i++) {
         if ($hits1[$i]->{_source}->{nodeName} ne $hits2[$i]->{_source}->{nodeName}) {
@@ -1953,7 +1968,7 @@ sub optimizeOther {
     print "Optimizing Admin Indices\n";
     foreach my $i ("${PREFIX}stats_v2", "${PREFIX}dstats_v2", "${PREFIX}files_v4", "${PREFIX}sequence_v1", "${PREFIX}tags_v3", "${PREFIX}users_v4") {
         progress("$i ");
-        esGet("/$i/_optimize?max_num_segments=1", 1);
+        esGet("/$i/$main::OPTIMIZE?max_num_segments=1", 1);
         esPost("/$i/_upgrade", "", 1);
     }
     print "\n";
@@ -1970,6 +1985,8 @@ sub parseArgs {
         } elsif ($ARGV[$pos] eq "--replicas") {
             $pos++;
             $REPLICAS = int($ARGV[$pos]);
+        } elsif ($ARGV[$pos] eq "--nooptimize") {
+	    $NOOPTIMIZE = 1;
         } else {
             print "Unknown option '", $ARGV[$pos], "'\n";
         }
@@ -2001,7 +2018,7 @@ showHelp("Must have both <type> and <num> arguments") if (@ARGV < 4 && $ARGV[1] 
 
 parseArgs(2) if ($ARGV[1] =~ /^(init|initnoprompt|upgrade|upgradenoprompt)$/);
 
-$main::userAgent = LWP::UserAgent->new(timeout => 20);
+$main::userAgent = LWP::UserAgent->new(timeout => 30);
 
 if ($ARGV[0] =~ /^http/) {
     $main::elasticsearch = $ARGV[0];
@@ -2062,12 +2079,12 @@ if ($ARGV[1] =~ /^users-?import$/) {
 
     dbESVersion();
     $main::userAgent->timeout(3600);
-    optimizeOther();
-    printf ("Expiring %s indices, optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), commify($optimizecnt));
+    optimizeOther() unless $NOOPTIMIZE ;
+    printf ("Expiring %s indices, %s optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), $NOOPTIMIZE?"Not":"", commify($optimizecnt));
     foreach my $i (sort (keys %{$indices})) {
         progress("$i ");
         if (exists $indices->{$i}->{OPTIMIZEIT}) {
-            esGet("/$i/_optimize?max_num_segments=4", 1);
+            esGet("/$i/$main::OPTIMIZE?max_num_segments=4", 1) unless $NOOPTIMIZE ;
             if ($REPLICAS != -1) {
                 esGet("/$i/_flush", 1);
                 esPut("/$i/_settings", '{index: {"number_of_replicas":' . $REPLICAS . '}}', 1);
@@ -2086,7 +2103,7 @@ if ($ARGV[1] =~ /^users-?import$/) {
     printf "Optimizing %s Session Indices\n", commify(scalar(keys %{$indices}));
     foreach my $i (sort (keys %{$indices})) {
         progress("$i ");
-        esGet("/$i/_optimize?max_num_segments=4", 1);
+        esGet("/$i/$main::OPTIMIZE?max_num_segments=4", 1);
         esPost("/$i/_upgrade", "", 1);
     }
     print "\n";
@@ -2425,7 +2442,8 @@ if ($ARGV[1] =~ /(init|wipe)/) {
         usersUpdate();
         sessionsUpdate();
         checkForOldIndices();
-    } elsif ($main::versionNumber <= 34) {
+    } elsif ($main::versionNumber <= 35) {
+        usersUpdate();
         sessionsUpdate();
         checkForOldIndices();
     } else {

@@ -1,9 +1,14 @@
-<div class="container-fluid container-users">
+<div class="container-fluid margin-for-main-and-sub-navbar">
 
-  <h2 id="users" class="margined-bottom-none">
-    <span class="fa fa-fw fa-users"></span>&nbsp;
-    Users
-    <button class="pull-right btn btn-blue btn-header"
+  <div class="sub-navbar">
+    <span class="sub-navbar-title">
+      <span class="fa-stack">
+        <span class="fa fa-users fa-stack-1x"></span>
+        <span class="fa fa-square-o fa-stack-2x"></span>
+      </span>&nbsp;
+      Users
+    </span>
+    <button class="pull-right btn btn-sm btn-theme-secondary btn-header"
       ng-click="$ctrl.goToNewUserForm()">
       <span class="fa fa-plus-circle"></span>&nbsp;
       New User
@@ -12,9 +17,7 @@
       <toast message="$ctrl.msg" type="$ctrl.msgType"
         done="$ctrl.messageDone()"></toast>
     </div>
-  </h2>
-
-  <hr>
+  </div>
 
   <div class="row">
     <!-- top pagination controls -->
@@ -49,8 +52,8 @@
           ng-class="::{'no-wrap':column.nowrap}"
           ng-click="$ctrl.columnClick(column.sort)" tooltip-placement="top-left"
           uib-tooltip="{{::column.help}}" tooltip-append-to-body="true">
-          <span ng-if="::column.sort !== ''" ng-show="$ctrl.sortField === column.sort && !$ctrl.sortReverse" class="fa fa-sort-desc"></span>
-          <span ng-if="::column.sort !== ''" ng-show="$ctrl.sortField === column.sort && $ctrl.sortReverse" class="fa fa-sort-asc"></span>
+          <span ng-if="::column.sort !== ''" ng-show="$ctrl.sortField === column.sort && !$ctrl.sortReverse" class="fa fa-sort-asc"></span>
+          <span ng-if="::column.sort !== ''" ng-show="$ctrl.sortField === column.sort && $ctrl.sortReverse" class="fa fa-sort-desc"></span>
           <span ng-if="::column.sort !== ''" ng-show="$ctrl.sortField !== column.sort" class="fa fa-sort"></span>
           {{::column.name}}
         </th>
@@ -75,23 +78,28 @@
         <td class="no-wrap"><input type="checkbox" ng-model="user.emailSearch" ng-change="$ctrl.userChanged(user);"></td>
         <td class="no-wrap"><input type="checkbox" ng-model="user.removeEnabled" ng-change="$ctrl.userChanged(user);"></td>
         <td class="no-wrap">
-          <a class="btn btn-sm btn-green"
-            href="settings?userId={{user.userId}}"
+          <a class="btn btn-sm btn-theme-tertiary"
+            ng-href="settings?userId={{user.userId}}"
             uib-tooltip="Settings for {{user.userId}}">
             <span class="fa fa-gear"></span>
           </a>
           <a class="btn btn-sm btn-danger"
             ng-click="$ctrl.deleteUser(user)"
-            uib-tooltip="Delete {{user.userId}}"
-            >
+            uib-tooltip="Delete {{user.userId}}">
             <span class="fa fa-trash-o"></span>
           </a>
         </td>
       </tr>
-      <tr ng-if="$ctrl.searchUsers !== undefined && !$ctrl.filteredUsers.length">
-        <td colspan="10" class="text-danger">
+      <tr ng-if="$ctrl.searchUsers !== undefined && !$ctrl.filteredUsers.length && $ctrl.users.data.length > 0">
+        <td colspan="10" class="text-danger text-center">
           <span class="fa fa-warning"></span>&nbsp;
-          No results match your search
+          <strong>No results match your search</strong>
+        </td>
+      </tr>
+      <tr ng-if="$ctrl.users.data.length === 0">
+        <td colspan="10" class="text-danger text-center">
+          <span class="fa fa-warning"></span>&nbsp;
+          <strong>No users or none that match your search. Create one by filling out the form below.</strong>
         </td>
       </tr>
     </tbody>
@@ -141,7 +149,7 @@
                 </div>
               </div>
               <div>
-              <button class="btn btn-sm btn-green pull-right margined-top"
+              <button class="btn btn-sm btn-theme-tertiary pull-right margined-top"
                 ng-click="$ctrl.createUser()">
                 <span class="fa fa-plus-circle"></span>&nbsp;
                 Create

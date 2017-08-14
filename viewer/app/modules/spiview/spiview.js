@@ -2,16 +2,23 @@
 
   'use strict';
 
+  const defaultSpi = 'a2:100,prot-term:100,a1:100';
+
   // local variable to save query state
   let _query = {  // set query defaults:
     facets: 1,    // facets
-    spi   : 'a2:100,prot-term:100,a1:100' // which spi data values to query for
+    spi   : defaultSpi // which spi data values to query for
   };
 
   let newQuery = true, openedCategories = false;
 
   // object to store loading categories and how many fields are loading within
   let categoryLoadingCounts = {};
+
+  // save currently executing promise
+  let pendingPromise;
+
+  let timeout;
 
   /**
    * @class SpiviewController
@@ -27,7 +34,6 @@
      * @param $q              Service to run functions asynchronously
      * @param $scope          Angular application model object
      * @param $timeout        Angular's wrapper for window.setTimeout
-     * @param $location       Exposes browser address bar URL (based on the window.location)
      * @param $routeParams    Retrieve the current set of route parameters
      * @param UserService     Transacts users and user data with the server
      * @param FieldService    Retrieves available fields from the server
@@ -35,12 +41,11 @@
      * @param SessionService  Transacts sessions with the server
      * @ngInject
      */
-    constructor($q, $scope, $timeout, $location, $routeParams,
+    constructor($q, $scope, $timeout, $routeParams,
       UserService, FieldService, SpiviewService, SessionService) {
       this.$q             = $q;
       this.$scope         = $scope;
       this.$timeout       = $timeout;
-      this.$location      = $location;
       this.$routeParams   = $routeParams;
       this.UserService    = UserService;
       this.FieldService   = FieldService;
@@ -50,18 +55,27 @@
 
     /* Callback when component is mounted and ready */
     $onInit() {
+      this.loadingVisualizations = true;
+
       this.loading  = true;
       this.query    = _query; // load saved query
 
       if (this.$routeParams.spi) {
         // if there's a spi param use it
         this.query.spi = _query.spi = this.$routeParams.spi;
-      } else { // if there isn't, set it for future use
-        this.$location.search('spi', this.query.spi);
+        this.issueQueries();
+      } else { // use what's saved in the database
+        this.SessionService.getState('spiview')
+          .then((response) => {
+            this.query.spi = response.data.visibleFields;
+            if (!this.query.spi) { this.query.spi = defaultSpi; }
+            this.issueQueries();
+          })
+          .catch((error) => {
+            this.query.spi = defaultSpi;
+            this.issueQueries();
+          });
       }
-
-      this.getFields(); // IMPORTANT: kicks off initial query for spi data!
-      this.getUserSettings();
 
       let initialized;
       this.$scope.$on('change:search', (event, args) => {
@@ -85,7 +99,15 @@
         if (!initialized) { initialized = true; return; }
 
         newQuery = true;
-        this.getSpiData(this.query.spi);
+
+        if (pendingPromise) {   // if there's already a req (or series of reqs)
+          this.cancelLoading(); // cancel any current requests
+          timeout = this.$timeout(() => { // wait for promise abort to complete
+            this.getSpiData(this.query.spi);
+          }, 100);
+        } else {
+          this.getSpiData(this.query.spi);
+        }
       });
 
       // watch for additions to search parameters from spi values
@@ -101,8 +123,31 @@
       });
     }
 
+    /* fired when controller's containing scope is destroyed */
+    $onDestroy() {
+      // reset state variables
+      newQuery = true;
+      openedCategories = false;
+      categoryLoadingCounts = {};
+
+      if (timeout) { this.$timeout.cancel(timeout); }
+
+      if (pendingPromise) {     // if there's  a req (or series of reqs)
+        pendingPromise.abort(); // cancel current server request
+        pendingPromise  = null; // reset
+      }
+    }
+
 
     /* data retrieve/setup/update ------------------------------------------ */
+    /* issues queries to populate the page
+     * IMPORTANT: kicks off initial query for spi data! */
+    issueQueries() {
+      this.getFields(); // IMPORTANT: kicks off initial query for spi data!
+      this.getUserSettings();
+      this.getSpiviewFieldConfigs();
+    }
+
     /* Retrieves the list of fields from the server and groups them into
      * categories, then kicks of the query for spi data */
     getFields() {
@@ -115,6 +160,8 @@
 
           for (let i = 0, len = this.fields.length; i < len; ++i) {
             let field = this.fields[i], newField;
+
+            field.active = false;
 
             if (field.noFacet || field.regex) { continue; }
             else if (field.dbField.match(/\.snow$/)) {
@@ -143,6 +190,7 @@
             }
 
             if (newField) {
+              newField.active = false;
               this.categoryObjects[field.group].fields.push(newField);
               this.fields.push(newField);
             }
@@ -159,6 +207,25 @@
           this.loading  = false;
           this.error    = error.text;
         });
+    }
+
+    /* restarts the page with a new query by deactivating unnecessary spi data,
+       canceling any pending promises/timeouts, and issuing a new query */
+    restart() {
+      newQuery = true;
+      openedCategories = false;
+      categoryLoadingCounts = {};
+
+      this.deactivateSpiData(); // hide any removed fields from spi url param
+
+      if (pendingPromise) {   // if there's already a req (or series of reqs)
+        this.cancelLoading(); // cancel any current requests
+        timeout = this.$timeout(() => { // wait for promise abort to complete
+          this.getSpiData(this.query.spi);
+        }, 100);
+      } else {
+        this.getSpiData(this.query.spi);
+      }
     }
 
     /**
@@ -225,21 +292,21 @@
 
     /**
      * Creates a task function to be executed in sequence
-     * TODO put this in spiview.service?
      * @param {object} field  The field to get spi data for
      * @param {int} count     The amount of spi data to query for
      * @returns {function()}  The function to be executed
      */
     createTask(field, count) {
-      let task = () => {
+      return () => {
         let taskDeferred = this.$q.defer();
-        this.$timeout(() => { // timeout for angular to render previous data
-          taskDeferred.resolve(this.getSingleSpiData(field, count));
+
+        timeout = this.$timeout(() => { // timeout for angular to render previous data
+          if (this.canceled) { taskDeferred.promise.then(angular.noop); }
+          else { taskDeferred.resolve(this.getSingleSpiData(field, count)); }
         }, 100);
+
         return taskDeferred.promise;
       };
-
-      return task;
     }
 
     /**
@@ -249,9 +316,14 @@
      *                          e.g. 'fp:100,lp:200'
      */
     getSpiData(spiQuery) {
+      if (!spiQuery) { return; }
+
       // reset loading counts for categories
       categoryLoadingCounts = {};
 
+      this.dataLoading = true;
+      this.staleData = false;
+      this.canceled = false;
       this.error = false;
 
       let spiParamsArray = spiQuery.split(',');
@@ -275,31 +347,48 @@
           }
         }
 
-        category = SpiviewController.setupCategory(this.categoryObjects, field);
-        category.loading = true; // loading is set to false in getSingleSpiData
+        if (field) {
+          category = SpiviewController.setupCategory(this.categoryObjects, field);
+          
+          category.isopen   = true; // open the category to display the field
+          category.loading  = true; // loading is set to false in getSingleSpiData
 
-        // count the number of fields fetched for each category
-        SpiviewController.countCategoryFieldsLoading(category, true);
+          // count the number of fields fetched for each category
+          SpiviewController.countCategoryFieldsLoading(category, true);
 
-        let spiData = category.spi[field.dbField];
+          let spiData = category.spi[field.dbField];
 
-        spiData.active  = true;
-        spiData.loading = true;
-        spiData.error   = false;
+          field.active    = true;
+          spiData.active  = true;
+          spiData.loading = true;
+          spiData.error   = false;
 
-        tasks.push(this.createTask(field, count));
+          tasks.push(this.createTask(field, count));
+        }
       }
 
       if (!openedCategories) { this.openCategories(); }
 
-      // start processing tasks serially
-      SpiviewController.serial(tasks)
-        .then((response) => { // returns the last result in the series
-          if (response.bsqErr) { this.error = response.bsqErr; }
-        })
-        .catch((error) => {
-          this.error = error;
-        });
+      if (tasks.length) {
+        // start processing tasks serially
+        SpiviewController.serial(tasks)
+          .then((response) => { // returns the last result in the series
+            if (response && response.bsqErr) {
+              this.error = response.bsqErr;
+            }
+            this.dataLoading = false;
+            pendingPromise = null;
+          })
+          .catch((error) => {
+            this.error = error;
+            this.dataLoading = false;
+            pendingPromise = null;
+          });
+      } else {
+        // if we couldn't figure out the fields to request,
+        // request the default ones
+        this.getSpiData(defaultSpi);
+      }
     }
 
     /**
@@ -308,10 +397,13 @@
      * @param {int} count     The amount of spi data to query for
      */
     getSingleSpiData(field, count) {
-      if (!count) { count = 100; } // default amount of spi data to retrieve
-
       let category  = SpiviewController.setupCategory(this.categoryObjects, field);
       let spiData   = category.spi[field.dbField];
+
+      // don't continue if the active flag is defined and false
+      if (spiData.active !== undefined && !spiData.active) { return; }
+
+      if (!count) { count = 100; } // default amount of spi data to retrieve
 
       spiData.active  = true;
       spiData.loading = true;
@@ -328,39 +420,44 @@
         view      : this.query.view
       };
 
-      let promise = this.SpiviewService.get(query);
+      pendingPromise = this.SpiviewService.get(query);
 
-      promise.then((response) => {
-        SpiviewController.countCategoryFieldsLoading(category, false);
+      pendingPromise
+        .then((response) => {
+          SpiviewController.countCategoryFieldsLoading(category, false);
 
-        if (response.bsqErr) { spiData.error = response.bsqErr; }
+          if (response.bsqErr) { spiData.error = response.bsqErr; }
 
-        // only update the requested spi data
-        spiData.loading = false;
-        spiData.value   = response.spi[field.dbField];
-        spiData.count   = count;
+          // only update the requested spi data
+          spiData.loading     = false;
+          spiData.value       = response.spi[field.dbField];
+          spiData.count       = count;
 
-        if (newQuery) { // this data comes back with every request
-          // so we should it up for the view ASAP (on first request)
-          newQuery        = false;
-          this.mapData    = response.map;
-          this.graphData  = response.graph;
-          this.protocols  = response.protocols;
-          this.total      = response.recordsTotal;
-          this.filtered   = response.recordsFiltered;
+          if (newQuery) { // this data comes back with every request
+            // we should show it in the view ASAP (on first request)
+            newQuery        = false;
+            this.mapData    = response.map;
+            this.graphData  = response.graph;
+            this.protocols  = response.protocols;
+            this.total      = response.recordsTotal;
+            this.filtered   = response.recordsFiltered;
 
-          this.updateProtocols();
-        }
-      })
-      .catch((error) => {
-        SpiviewController.countCategoryFieldsLoading(category, false);
+            this.loadingVisualizations = false;
 
-        // display error for the requested spi data
-        spiData.loading = false;
-        spiData.error   = error.text;
-      });
+            this.updateProtocols();
+          }
+        })
+        .catch((error) => {
+          SpiviewController.countCategoryFieldsLoading(category, false);
 
-      return promise;
+          // display error for the requested spi data
+          spiData.loading     = false;
+          spiData.error       = error.text;
+
+          this.loadingVisualizations = false;
+        });
+
+      return pendingPromise;
     }
 
     /* Retrieves the current user's settings (specifically for timezone) */
@@ -416,6 +513,30 @@
       }
     }
 
+    /* deactivate spi data that is no longer in url params */
+    deactivateSpiData() {
+      let spiParamsArray = this.query.spi.split(',');
+      for (let key in this.categoryObjects) {
+        if (this.categoryObjects.hasOwnProperty(key)) {
+          let category = this.categoryObjects[key];
+          for (let k in category.spi) {
+            if (category.spi.hasOwnProperty(k)) {
+              let spiData = category.spi[k];
+              if (spiData.active) {
+                let inactive = true;
+                for (let i = 0, len = spiParamsArray.length; i < len; ++i) {
+                  // if it exists in spi url param, it's still active
+                  if (spiParamsArray[i] === k) { inactive = false; }
+                }
+                // it's no longer in the spi url param, so it's not active
+                if (inactive) { spiData.active = false; }
+              }
+            }
+          }
+        }
+      }
+    }
+
 
     /* exposed functions --------------------------------------------------- */
     /**
@@ -424,10 +545,13 @@
      * Also updates the spi query parameter in the url
      * @param {object} field      The field to get spi data for
      * @param {bool} issueQuery   Whether to issue query for the data
-     * @returns {string} newQuery The query string for the toggled on fields
+     * @param {bool} saveFields   Whether to save the visible fields
+     * @returns {string} spiQuery The query string for the toggled on fields
      *                            e.g. 'lp:200,fp:100'
      */
-    toggleSpiData(field, issueQuery) {
+    toggleSpiData(field, issueQuery, saveFields) {
+      field.active = !field.active;
+
       let spiData;
       if (this.categoryObjects[field.group].spi) {
         spiData = this.categoryObjects[field.group].spi[field.dbField];
@@ -435,9 +559,12 @@
 
       let addToQuery = false, spiQuery = '';
 
-      if (spiData) { // spi data exists, so we only need to toggle active state
+      if (spiData) { // spi data exists, so we need to toggle active state
         spiData.active  = !spiData.active;
         addToQuery      = spiData.active;
+        // if spiData was not populated with a value and it's now active
+        // we need to show get the spi data from the server
+        if (!spiData.value && spiData.active) { this.getSingleSpiData(field); }
       } else { // spi data doesn't exist, so fetch it
         addToQuery = true;
         if (issueQuery) { this.getSingleSpiData(field); }
@@ -461,7 +588,9 @@
       }
 
       _query.spi = this.query.spi;
-      this.$location.search('spi', this.query.spi); // update url param
+
+      // save field state if method was invoked from field button click
+      if (saveFields) { this.saveFieldState(); }
 
       return spiQuery;
     }
@@ -522,7 +651,8 @@
       value.count = count;
 
       _query.spi = this.query.spi;
-      this.$location.search('spi', this.query.spi); // update url param
+
+      this.saveFieldState();
 
       this.getSingleSpiData(field, count);
     }
@@ -557,6 +687,8 @@
       }
 
       if (load && query) { this.getSpiData(query); }
+
+      this.saveFieldState();
     }
 
     /**
@@ -569,16 +701,121 @@
 
     /**
      * Opens a new browser tab containing all the unique values for a given field
-     * @param {string} fieldID  The field id (dbField) to display unique values for
-     * @param {int} counts      Whether to display the unique values with counts (1 or 0)
+     * @param {string} exp  The field id to display unique values for
+     * @param {int} counts  Whether to display the unique values with counts (1 or 0)
      */
-    exportUnique(fieldID, counts) {
-      this.SessionService.exportUniqueValues(fieldID, counts);
+    exportUnique(exp, counts) {
+      this.SessionService.exportUniqueValues(exp, counts);
+    }
+
+    /* Cancels the loading of all server requests */
+    cancelLoading() {
+      if (pendingPromise) {
+        pendingPromise.abort(); // cancel current server request
+        pendingPromise = null; // reset
+      }
+
+      this.canceled     = true;   // indicate cancellation for future requests
+      this.dataLoading  = false;
+      this.staleData    = newQuery;
+
+      // set loading to false for all categories and fields
+      for (let key in this.categoryObjects) {
+        if (this.categoryObjects.hasOwnProperty(key)) {
+          let cat = this.categoryObjects[key];
+          cat.loading = false;
+          if (cat.spi) {
+            for (let field in cat.spi) {
+              if (cat.spi.hasOwnProperty(field)) {
+                cat.spi[field].loading = false;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /* Gets the current user's custom spiview fields configurations */
+    getSpiviewFieldConfigs() {
+      this.UserService.getSpiviewFields()
+         .then((response) => {
+           this.fieldConfigs = response;
+         })
+         .catch((error) => {
+           this.fieldConfigError = error.text;
+         });
+    }
+
+    /* Saves a custom spiview fields configuration */
+    saveFieldConfiguration() {
+      if (!this.newFieldConfigName) {
+        this.fieldConfigError = 'You must name your new spiview field configuration';
+        return;
+      }
+
+      let data = {
+        name  : this.newFieldConfigName,
+        fields: this.query.spi
+      };
+
+      this.UserService.createSpiviewFieldConfig(data)
+        .then((response) => {
+          data.name = response.name; // update column config name
+
+          this.fieldConfigs.push(data);
+
+          this.newFieldConfigName = null;
+          this.fieldConfigsOpen   = false;
+          this.fieldConfigError   = false;
+        })
+        .catch((error) => {
+          this.fieldConfigError = error.text;
+        });
+    }
+
+    /**
+     * Deletes a previously saved custom spiview fields configuration
+     * @param {string} name The name of the spiview fields config to remove
+     * @param {int} index   The index in the array of the spiview fields config to remove
+     */
+    deleteFieldConfiguration(name, index) {
+      this.UserService.deleteSpiviewFieldConfig(name)
+         .then(() => {
+           this.fieldConfigs.splice(index, 1);
+           this.fieldConfigError = false;
+         })
+         .catch((error) => {
+           this.fieldConfigError = error.text;
+         });
+    }
+
+    /**
+     * Loads a previously saved custom spiview fields configuration and
+     * reloads the fields
+     * If no index is given, loads the default spiview fields
+     * @param {int} index The index in the array of the spiview fields configs to load
+     */
+    loadFieldConfiguration(index) {
+      this.fieldConfigsOpen = false;  // close the field config dropdown
+
+      if (!index && index !== 0) {
+        this.query.spi = defaultSpi;
+      } else {
+        this.query.spi = this.fieldConfigs[index].fields;
+      }
+
+      this.saveFieldState();
+      this.restart();
+    }
+
+    /* saves the visible fields */
+    saveFieldState() {
+      this.SessionService.saveState({visibleFields:this.query.spi}, 'spiview');
     }
 
   }
 
-  SpiviewController.$inject = ['$q','$scope','$timeout','$location','$routeParams',
+  SpiviewController.$inject = ['$q','$scope','$timeout','$routeParams',
     'UserService','FieldService','SpiviewService','SessionService'];
 
   /**

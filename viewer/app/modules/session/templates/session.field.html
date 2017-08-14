@@ -29,10 +29,15 @@
   <!-- recurse on child fields -->
   <span ng-if="::($ctrl.field.dbField !== 'info')">
     <div class="field-children" ng-repeat="child in ::$ctrl.field.children track by $index">
-      <session-field field="::child" expr="{{::child.exp}}" stringify="{{::$ctrl.stringify}}"
+      <session-field field="::child" expr="{{::child.exp}}"
         value="{{::$ctrl.session[child.dbField]}}" parse="{{::$ctrl.parse}}"
         session="::$ctrl.session" timezone="{{::$ctrl.timezone}}"></session-field>
     </div>
   </span>
 
+</span>
+
+<!-- value does not correspond to a field; display it but it's not clickable -->
+<span ng-if="::(!$ctrl.field)">
+  {{::$ctrl.value}}&nbsp;&nbsp;
 </span>
