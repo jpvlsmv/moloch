@@ -6,26 +6,26 @@ branches:
 addons:
   apt:
     packages:
-    -  wget 
+    -  wget
     -  curl 
-    -  libpcre3-dev 
-    -  uuid-dev 
-    -  libmagic-dev 
-    -  pkg-config 
-    -  g++ 
-    -  flex 
-    -  bison 
-    -  zlib1g-dev 
-    -  libffi-dev 
-    -  gettext 
-    -  libgeoip-dev 
-    -  make 
-    -  libjson-perl 
-    -  libbz2-dev 
-    -  libwww-perl 
-    -  libpng-dev 
-    -  xz-utils 
-    -  libffi-dev 
+    -  libpcre3-dev
+    -  uuid-dev
+    -  libmagic-dev
+    -  pkg-config
+    -  g++
+    -  flex
+    -  bison
+    -  zlib1g-dev
+    -  libffi-dev
+    -  gettext
+    -  libgeoip-dev
+    -  make
+    -  libjson-perl
+    -  libbz2-dev
+    -  libwww-perl
+    -  libpng-dev
+    -  xz-utils
+    -  libffi-dev
     -  libssl-dev
     -  liblua5.2-dev
     -  libdaq-dev
