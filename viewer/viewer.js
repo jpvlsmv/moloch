@@ -260,6 +260,13 @@ app.use(function(req, res, next) {
   }
 
   var mrc = {};
+
+  mrc['httpAuthorizationDecode'] = {fields: "http.authorization", func: "{\
+    if (value.substring(0,5) === \"Basic\") \
+      return {name: \"Decoded:\", value: atob(value.substring(6))};\
+    return undefined;\
+  }"};
+
   for (var key in internals.rightClicks) {
     var rc = internals.rightClicks[key];
     if (!rc.users || rc.users[req.user.userId]) {
@@ -579,7 +586,6 @@ function proxyRequest (req, res, errCb) {
     var info = url.parse(viewUrl);
     info.path = req.url;
     info.agent = (client === http?internals.httpAgent:internals.httpsAgent);
-    info.rejectUnauthorized = true;
     addAuth(info, req.user, req.params.nodeName);
     addCaTrust(info, req.params.nodeName);
 
@@ -5958,10 +5964,14 @@ function processCronQuery(cq, options, query, endTime, cb) {
             Db.update("queries", "query", options.qid, document, {refresh: 1}, function () {});
           }
 
-          Db.scroll({
-            body: result._scroll_id,
+          query = {
+            body: {
+              scroll_id: result._scroll_id,
+            },
             scroll: '600s'
-          }, getMoreUntilDone);
+          };
+
+          Db.scroll(query, getMoreUntilDone);
         }
 
         if (err || result.error) {

@@ -205,7 +205,7 @@ WISESource.prototype.parseJSON = function (body, setCb, endCb) {
       continue;
     }
     for (var k in self.shortcuts) {
-      if (json[i][k] !== undefined) {
+      if (json[i][k] !== undefined && json[i][k] !== null) {
         args.push(self.shortcuts[k]);
         args.push(json[i][k]);
       }
@@ -345,7 +345,7 @@ WISESource.prototype.formatSetting = function () {
   return true;
 }
 //////////////////////////////////////////////////////////////////////////////////
-var typeName2Func = {ip: "getIp", domain: "getDomain", md5: "getMd5", email: "getEmail", url: "getURL", tuple: "getTuple"};
+var typeName2Func = {ip: "getIp", domain: "getDomain", md5: "getMd5", email: "getEmail", url: "getURL", tuple: "getTuple", ja3: "getJa3"};
 WISESource.prototype.typeSetting = function ()
 {
   this.type     = this.api.getConfig(this.section, "type");
