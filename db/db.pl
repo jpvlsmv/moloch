@@ -2001,7 +2001,8 @@ sub dbCheck {
             $errstr .= sprintf ("    REMOVE 'index.cache.field.type'\n");
         }
 
-        if (!(exists $nodeStat->{process}->{max_file_descriptors}) || int($nodeStat->{process}->{max_file_descriptors}) < 4000) {
+        if ( $^O =~ /win|msys/i || # Windows has no concept of max file descriptors covers "cygwin" "MSWin32" "mswin" and mingw
+           (!(exists $nodeStat->{process}->{max_file_descriptors}) || int($nodeStat->{process}->{max_file_descriptors}) < 4000) ) {
             $errstr .= sprintf ("  INCREASE max file descriptors in /etc/security/limits.conf and restart all ES node\n");
             $errstr .= sprintf ("                (change root to the user that runs ES)\n");
             $errstr .= sprintf ("          root hard nofile 128000\n");
