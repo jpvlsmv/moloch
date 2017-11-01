@@ -416,13 +416,14 @@ void moloch_config_load()
     config.dbFlushTimeout        = moloch_config_int(keyfile, "dbFlushTimeout", 5, 1, 60*30);
     config.maxESConns            = moloch_config_int(keyfile, "maxESConns", 20, 5, 1000);
     config.maxESRequests         = moloch_config_int(keyfile, "maxESRequests", 500, 10, 5000);
-    config.logEveryXPackets      = moloch_config_int(keyfile, "logEveryXPackets", 50000, 1000, 1000000);
+    config.logEveryXPackets      = moloch_config_int(keyfile, "logEveryXPackets", 50000, 1000, 0xffffffff);
     config.pcapBufferSize        = moloch_config_int(keyfile, "pcapBufferSize", 300000000, 100000, 0xffffffff);
     config.pcapWriteSize         = moloch_config_int(keyfile, "pcapWriteSize", 0x40000, 0x10000, 0x800000);
     config.maxFreeOutputBuffers  = moloch_config_int(keyfile, "maxFreeOutputBuffers", 50, 0, 0xffff);
     config.fragsTimeout          = moloch_config_int(keyfile, "fragsTimeout", 60*8, 60, 0xffff);
     config.maxFrags              = moloch_config_int(keyfile, "maxFrags", 50000, 1000, 0xffffff);
     config.snapLen               = moloch_config_int(keyfile, "snapLen", 16384, 1, MOLOCH_PACKET_MAX_LEN);
+    config.maxMemPercentage      = moloch_config_int(keyfile, "maxMemPercentage", 100, 5, 100);
 
     config.packetThreads         = moloch_config_int(keyfile, "packetThreads", 1, 1, MOLOCH_MAX_PACKET_THREADS);
 

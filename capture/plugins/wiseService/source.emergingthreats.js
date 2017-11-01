@@ -2,13 +2,13 @@
 /*
  *
  * Copyright 2012-2016 AOL Inc. All rights reserved.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -44,7 +44,7 @@ function EmergingThreatsSource (api, section) {
   this.scoreField = this.api.addField("field:emergingthreats.score;db:et.score;kind:integer;friendly:Score;help:Emerging Threats Score;count:true");
   this.categoryField = this.api.addField("field:emergingthreats.category;db:et.category-term;kind:termfield;friendly:Category;help:Emerging Threats Category;count:true");
 
-  this.api.addView("emergingthreats", 
+  this.api.addView("emergingthreats",
     "if (session.et)\n" +
     "  div.sessionDetailMeta.bold Emerging Threats\n" +
     "  dl.sessionDetailMeta\n" +
@@ -57,18 +57,17 @@ function EmergingThreatsSource (api, section) {
 }
 util.inherits(EmergingThreatsSource, wiseSource);
 //////////////////////////////////////////////////////////////////////////////////
-EmergingThreatsSource.prototype.parseCategories = function(fn) 
+EmergingThreatsSource.prototype.parseCategories = function(fn)
 {
-  var self = this;
-  var parser = csv.parse({skip_empty_lines:true}, function(err, data) {
+  var parser = csv.parse({skip_empty_lines:true}, (err, data) => {
     if (err) {
-      console.log(self.section, "- Couldn't parse", fn, "csv", err);
+      console.log(this.section, "- Couldn't parse", fn, "csv", err);
       return;
     }
 
-    self.categories = {};
+    this.categories = {};
     for (var i = 0; i < data.length; i++) {
-      self.categories[data[i][0]] = data[i][1];
+      this.categories[data[i][0]] = data[i][1];
     }
   });
   fs.createReadStream('/tmp/categories.txt').pipe(parser);
@@ -76,11 +75,9 @@ EmergingThreatsSource.prototype.parseCategories = function(fn)
 //////////////////////////////////////////////////////////////////////////////////
 EmergingThreatsSource.prototype.parse = function (fn, hash)
 {
-  var self = this;
-
-  var parser = csv.parse({skip_empty_lines:true}, function(err, data) {
+  var parser = csv.parse({skip_empty_lines:true}, (err, data) => {
     if (err) {
-      console.log(self.section, "- Couldn't parse", fn, "csv", err);
+      console.log(this.section, "- Couldn't parse", fn, "csv", err);
       return;
     }
 
@@ -88,9 +85,9 @@ EmergingThreatsSource.prototype.parse = function (fn, hash)
       if (data[i].length !== 3) {
         continue;
       }
-    
-      var encoded = wiseSource.encode(self.categoryField, self.categories[data[i][1]] || ('Unknown - ' + data[i][1]),
-                                      self.scoreField, "" + data[i][2]);
+
+      var encoded = wiseSource.encode(this.categoryField, this.categories[data[i][1]] || ('Unknown - ' + data[i][1]),
+                                      this.scoreField, "" + data[i][2]);
       var value = hash.get(data[i][0]);
       if (value) {
         value.num += 2;
@@ -99,33 +96,32 @@ EmergingThreatsSource.prototype.parse = function (fn, hash)
         hash.put(data[i][0], {num: 2, buffer: encoded});
       }
     }
-    console.log(self.section, "- Done Loading", fn);
+    console.log(this.section, "- Done Loading", fn);
   });
   fs.createReadStream(fn).pipe(parser);
 };
 //////////////////////////////////////////////////////////////////////////////////
 EmergingThreatsSource.prototype.loadFiles = function ()
 {
-  var self = this;
-  console.log(self.section, "- Downloading Files");
-  wiseSource.request('https://rules.emergingthreatspro.com/' + self.key + '/reputation/categories.txt', '/tmp/categories.txt', function (statusCode) {
+  console.log(this.section, "- Downloading Files");
+  wiseSource.request('https://rules.emergingthreatspro.com/' + this.key + '/reputation/categories.txt', '/tmp/categories.txt', (statusCode) => {
 
-    self.parseCategories("/tmp/categories.txt");
+    this.parseCategories("/tmp/categories.txt");
   });
 
-  wiseSource.request('https://rules.emergingthreatspro.com/' + self.key + '/reputation/iprepdata.csv', '/tmp/iprepdata.csv', function (statusCode) {
-    if (statusCode === 200 || !self.ipsLoaded) {
-      self.ipsLoaded = true;
-      self.ips.clear();
-      self.parse("/tmp/iprepdata.csv", self.ips);
+  wiseSource.request('https://rules.emergingthreatspro.com/' + this.key + '/reputation/iprepdata.csv', '/tmp/iprepdata.csv', (statusCode) => {
+    if (statusCode === 200 || !this.ipsLoaded) {
+      this.ipsLoaded = true;
+      this.ips.clear();
+      this.parse("/tmp/iprepdata.csv", this.ips);
     }
   });
 
-  wiseSource.request('https://rules.emergingthreatspro.com/' + self.key + '/reputation/domainrepdata.csv', '/tmp/domainrepdata.csv', function (statusCode) {
-    if (statusCode === 200 || !self.domainsLoaded) {
-      self.domainsLoaded = true;
-      self.domains.clear();
-      self.parse("/tmp/domainrepdata.csv", self.domains);
+  wiseSource.request('https://rules.emergingthreatspro.com/' + this.key + '/reputation/domainrepdata.csv', '/tmp/domainrepdata.csv', (statusCode) => {
+    if (statusCode === 200 || !this.domainsLoaded) {
+      this.domainsLoaded = true;
+      this.domains.clear();
+      this.parse("/tmp/domainrepdata.csv", this.domains);
     }
   });
 };
@@ -139,12 +135,10 @@ EmergingThreatsSource.prototype.getIp = function(ip, cb) {
 };
 //////////////////////////////////////////////////////////////////////////////////
 EmergingThreatsSource.prototype.dump = function(res) {
-  var self = this;
-
-  ["ips", "domains"].forEach(function (ckey) {
-    res.write("" + ckey + ":\n");
-    self[ckey].forEach(function(key, value) {
-      var str = "{key: \"" + key + "\", ops:\n" + 
+  ["ips", "domains"].forEach((ckey) => {
+    res.write(`${ckey}:\n`);
+    this[ckey].forEach((key, value) => {
+      var str = `{key: "${key}", ops:\n` +
         wiseSource.result2Str(wiseSource.combineResults([value])) + "},\n";
       res.write(str);
     });

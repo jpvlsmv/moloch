@@ -29,8 +29,7 @@ function HODIRedisSource (api, section) {
   var contentTypes = this.api.getConfig(section, "contentTypes",
           "application/x-dosexec,application/vnd.ms-cab-compressed,application/pdf,application/x-shockwave-flash,application/x-java-applet,application/jar").split(",");
 
-  var self = this;
-  contentTypes.forEach(function(type) { self.contentTypes[type] = 1;});
+  contentTypes.forEach((type) => { this.contentTypes[type] = 1;});
   this.url      = api.getConfig(section, "url");
   if (this.url === undefined) {
     console.log(this.section, "- ERROR not loading since no url specified in config file");
@@ -54,7 +53,7 @@ util.inherits(HODIRedisSource, wiseSource);
 HODIRedisSource.prototype.process = function(key, tag, cb) {
   var date = new Date();
 
-  this.client.hsetnx(key, "first", date.getTime(), function (err, result) {
+  this.client.hsetnx(key, "first", date.getTime(), (err, result) => {
     if (result === 1) {
       return cb(null, tag);
     } else {
@@ -63,12 +62,12 @@ HODIRedisSource.prototype.process = function(key, tag, cb) {
   });
   this.client.hset(key, "last", date.getTime());
   this.client.hincrby(key, "count", 1);
-  this.client.hincrby(key, "count:" + date.getFullYear() + ":" + date.getMonth()+1, 1);
+  this.client.hincrby(key, `count:${date.getFullYear()}:${date.getMonth()+1}`, 1);
 
 };
 //////////////////////////////////////////////////////////////////////////////////
 HODIRedisSource.prototype.getDomain = function(query, cb) {
-  return this.process("d:" + query.value, this.tagsDomain, cb);
+  return this.process(`d:${query.value}`, this.tagsDomain, cb);
 };
 //////////////////////////////////////////////////////////////////////////////////
 HODIRedisSource.prototype.getMd5 = function(query, cb) {
@@ -76,15 +75,15 @@ HODIRedisSource.prototype.getMd5 = function(query, cb) {
     return cb (null, undefined);
   }
 
-  return this.process("h:" + query.value, this.tagsMd5, cb);
+  return this.process(`h:${query.value}`, this.tagsMd5, cb);
 };
 //////////////////////////////////////////////////////////////////////////////////
 HODIRedisSource.prototype.getEmail = function(query, cb) {
-  return this.process("e:" + query.value, this.tagsEmail, cb);
+  return this.process(`e:${query.value}`, this.tagsEmail, cb);
 };
 //////////////////////////////////////////////////////////////////////////////////
 HODIRedisSource.prototype.getIp = function(query, cb) {
-  return this.process("a:" + query.value, this.tagsIp, cb);
+  return this.process(`a:${query.value}`, this.tagsIp, cb);
 };
 //////////////////////////////////////////////////////////////////////////////////
 exports.initSource = function(api) {

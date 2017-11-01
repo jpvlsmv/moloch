@@ -284,10 +284,15 @@
         isostop  = new Date(parseInt(urlParams.stopTime) * 1000);
       }
       else {
-        dateparams = `date=${urlParams.date}`;
         isostart = new Date();
         isostop  = new Date();
-        isostart.setHours(isostart.getHours() - parseInt(urlParams.date));
+        if (urlParams.date) {
+            isostart.setHours(isostart.getHours() - parseInt(urlParams.date));
+        }
+        else {
+            isostart.setHours(isostart.getHours() - 1);
+        }
+        dateparams = `date=${urlParams.date}`;
       }
 
       for (let key in this.molochClickables) {
@@ -318,6 +323,13 @@
              .replace('%URL%', encodeURIComponent('http:' + url));
 
           let name = this.molochClickables[key].name || key;
+
+          name = (name)
+             .replace("%FIELD%", info.field)
+             .replace("%TEXT%", text)
+             .replace("%HOST%", host)
+             .replace("%URL%", url);
+
           let value = '%URL%';
           if (rc.category === 'host') { value = '%HOST%'; }
 
@@ -354,7 +366,7 @@
    */
   angular.module('moloch')
     .component('sessionField', {
-      template  : require('html!../templates/session.field.html'),
+      template  : require('../templates/session.field.html'),
       controller: SessionFieldController,
       bindings  : {
         // the session object

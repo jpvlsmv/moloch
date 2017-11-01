@@ -42,6 +42,8 @@
 # 33 - user columnConfigs
 # 34 - stats_v2
 # 35 - user spiviewFieldConfigs
+# 36 - user action history
+# 37 - add request body to history
 
 use HTTP::Request::Common;
 use LWP::UserAgent;
@@ -50,12 +52,13 @@ use Data::Dumper;
 use POSIX;
 use strict;
 
-my $VERSION = 35;
+my $VERSION = 37;
 my $verbose = 0;
 my $PREFIX = "";
 my $NOCHANGES = 0;
 my $SHARDS = -1;
 my $REPLICAS = -1;
+my $HISTORY = 13;
 my $NOOPTIMIZE = 0;
 
 ################################################################################
@@ -103,6 +106,7 @@ sub showHelp($)
     print "       num                     - number of indexes to keep\n";
     print "    --replicas <num>           - Number of replicas for older sessions indices, default 0\n";
     print "    --nooptimize               - Do not optimize session indexes during this operation\n";
+    print "    --history <num>            - Number of weeks of history to keep, by default 13\n";
     print "  field disable <exp>          - disable a field from being indexed\n";
     print "  field enable <exp>           - enable a field from being indexed\n";
     exit 1;
@@ -147,7 +151,7 @@ sub esPost
 
     print "POST ${main::elasticsearch}$url\n" if ($verbose > 2);
     print "POST DATA:", Dumper($content), "\n" if ($verbose > 3);
-    my $response = $main::userAgent->post("${main::elasticsearch}$url", Content => $content);
+    my $response = $main::userAgent->post("${main::elasticsearch}$url", Content => $content, Content_Type => "application/json");
     if ($response->code == 500 || ($response->code != 200 && $response->code != 201 && !$dontcheck)) {
       print "POST RESULT:", $response->content, "\n" if ($verbose > 3);
       die "Couldn't POST ${main::elasticsearch}$url  the http status code is " . $response->code . " are you sure elasticsearch is running/reachable?";
@@ -170,7 +174,7 @@ sub esPut
 
     print "PUT ${main::elasticsearch}$url\n" if ($verbose > 2);
     print "PUT DATA:", Dumper($content), "\n" if ($verbose > 3);
-    my $response = $main::userAgent->request(HTTP::Request::Common::PUT("${main::elasticsearch}$url", Content => $content));
+    my $response = $main::userAgent->request(HTTP::Request::Common::PUT("${main::elasticsearch}$url", Content => $content, Content_Type => "application/json"));
     if ($response->code == 500 || ($response->code != 200 && !$dontcheck)) {
       print Dumper($response);
       die "Couldn't PUT ${main::elasticsearch}$url  the http status code is " . $response->code . " are you sure elasticsearch is running/reachable?\n" . $response->content;
@@ -323,9 +327,9 @@ sub sequenceUpdate
     my $mapping = '
 {
   "sequence": {
-    "_source" : { "enabled": 0 },
-    "_all"    : { "enabled": 0 },
-    "enabled" : 0
+    "_source" : { "enabled": "false" },
+    "_all"    : { "enabled": "false" },
+    "enabled" : "false"
   }
 }';
 
@@ -368,9 +372,9 @@ sub filesUpdate
     my $mapping = '
 {
   "file": {
-    "_all": {"enabled": 0},
-    "_source": {"enabled": 1},
-    "dynamic": "dynamic",
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
+    "dynamic": "true",
     "dynamic_templates": [
       {
         "any": {
@@ -436,8 +440,8 @@ sub statsUpdate
 my $mapping = '
 {
   "stat": {
-    "_all": {"enabled": false},
-    "_source": {"enabled": true},
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
     "dynamic": "true",
     "dynamic_templates": [
       {
@@ -493,8 +497,8 @@ sub dstatsUpdate
 my $mapping = '
 {
   "dstat": {
-    "_all": {"enabled": false},
-    "_source": {"enabled": true},
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
     "dynamic": "true",
     "dynamic_templates": [
       {
@@ -557,8 +561,8 @@ sub fieldsUpdate
     my $mapping = '
 {
   "field": {
-    "_all": {"enabled": 0},
-    "_source": {"enabled": 1},
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
     "dynamic_templates": [
       {
         "string_template": {
@@ -582,7 +586,7 @@ sub fieldsUpdate
       "type": "ip",
       "dbField": "ipall",
       "portField": "portall",
-      "noFacet": true
+      "noFacet": "true"
     }');
     esPost("/${PREFIX}fields_v1/field/port", '{
       "friendlyName": "All port fields",
@@ -785,7 +789,7 @@ sub fieldsUpdate
       "help": "Moloch ID for the session",
       "type": "termfield",
       "dbField": "_id",
-      "noFacet": true
+      "noFacet": "true"
 
     }');
     esPost("/${PREFIX}fields_v1/field/rootId", '{
@@ -824,7 +828,7 @@ sub fieldsUpdate
       "type": "termfield",
       "dbField": "fb1",
       "transform": "utf8ToHex",
-      "noFacet": true
+      "noFacet": "true"
     }');
     esPost("/${PREFIX}fields_v1/field/payload8.dst.hex", '{
       "friendlyName": "Payload Dst Hex",
@@ -841,7 +845,7 @@ sub fieldsUpdate
       "type": "termfield",
       "dbField": "fb2",
       "transform": "utf8ToHex",
-      "noFacet": true
+      "noFacet": "true"
     }');
     esPost("/${PREFIX}fields_v1/field/payload8.hex", '{
       "friendlyName": "Payload Hex",
@@ -872,7 +876,7 @@ sub fieldsUpdate
       "help": "Moloch view name",
       "type": "viewand",
       "dbField": "viewand",
-      "noFacet": true
+      "noFacet": "true"
     }');
     esPost("/${PREFIX}fields_v1/field/starttime", '{
       "friendlyName": "Start Time",
@@ -912,8 +916,8 @@ sub queriesUpdate
     my $mapping = '
 {
   "query": {
-    "_all": {"enabled": 0},
-    "_source": {"enabled": 1},
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
     "dynamic": "strict",
     "properties": {
       "name": {
@@ -963,7 +967,7 @@ sub sessionsUpdate
     my $mapping = '
 {
   "session": {
-    "_all": {"enabled": false},
+    "_all": {"enabled": "false"},
     "dynamic": "true",
     "dynamic_templates": [
       {
@@ -1029,7 +1033,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "url_analyzer",
         "copy_to": "rawus",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawus": {
         "type": "string",
@@ -1042,7 +1046,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawua",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawua": {
         "type": "string",
@@ -1064,23 +1068,23 @@ sub sessionsUpdate
       },
       "lp": {
         "type": "long",
-        "doc_values": true
+        "doc_values": "true"
       },
       "lpd": {
         "type": "date",
-        "doc_values": true
+        "doc_values": "true"
       },
       "fp": {
         "type": "long",
-        "doc_values": true
+        "doc_values": "true"
       },
       "fpd": {
         "type": "date",
-        "doc_values": true
+        "doc_values": "true"
       },
       "a1": {
         "type": "long",
-        "doc_values": true
+        "doc_values": "true"
       },
       "g1": {
         "type": "string",
@@ -1090,7 +1094,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawas1",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawas1": {
         "type": "string",
@@ -1102,7 +1106,7 @@ sub sessionsUpdate
       },
       "p1": {
         "type": "integer",
-        "doc_values": true
+        "doc_values": "true"
       },
       "fb1": {
         "type": "string",
@@ -1110,7 +1114,7 @@ sub sessionsUpdate
       },
       "a2": {
         "type": "long",
-        "doc_values": true
+        "doc_values": "true"
       },
       "g2": {
         "type": "string",
@@ -1120,7 +1124,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawas2",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawas2": {
         "type": "string",
@@ -1132,7 +1136,7 @@ sub sessionsUpdate
       },
       "p2": {
         "type": "integer",
-        "doc_values": true
+        "doc_values": "true"
       },
       "fb2": {
         "type": "string",
@@ -1155,7 +1159,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawasxff",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawasxff": {
         "type": "string",
@@ -1193,7 +1197,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawasdnsip",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawasdnsip": {
         "type": "string",
@@ -1322,7 +1326,7 @@ sub sessionsUpdate
           "iOn": {
             "type": "string",
             "analyzer": "snowball",
-            "norms": {"enabled": false},
+            "norms": {"enabled": "false"},
             "fields": {
               "rawiOn": {"type": "string", "index": "not_analyzed"}
             }
@@ -1334,7 +1338,7 @@ sub sessionsUpdate
           "sOn": {
             "type": "string",
             "analyzer": "snowball",
-            "norms": {"enabled": false},
+            "norms": {"enabled": "false"},
             "fields": {
               "rawsOn": {"type": "string", "index": "not_analyzed"}
             }
@@ -1392,7 +1396,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "raweua",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "raweua": {
         "type": "string",
@@ -1405,7 +1409,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawesub",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawesub": {
         "type": "string",
@@ -1488,7 +1492,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawaseip",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawaseip": {
         "type": "string",
@@ -1587,7 +1591,7 @@ sub sessionsUpdate
         "type": "string",
         "analyzer": "snowball",
         "copy_to": "rawassocksip",
-        "norms": {"enabled": false}
+        "norms": {"enabled": "false"}
       },
       "rawassocksip": {
         "type": "string",
@@ -1663,6 +1667,96 @@ my $shardsPerNode = ceil($SHARDS * ($REPLICAS+1) / $main::numberOfNodes);
 }
 
 ################################################################################
+sub historyUpdate
+{
+    my $mapping = '
+{
+  "history": {
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
+    "dynamic": "strict",
+    "properties": {
+      "uiPage": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "userId": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "method": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "api": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "expression": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "view": {
+        "type": "object",
+        "dynamic": "true"
+      },
+      "timestamp": {
+        "type": "date"
+      },
+      "range": {
+        "type": "integer"
+      },
+      "query": {
+        "type": "string",
+        "index": "not_analyzed"
+      },
+      "queryTime": {
+        "type": "integer"
+      },
+      "recordsReturned": {
+        "type": "integer"
+      },
+      "recordsFiltered": {
+        "type": "long"
+      },
+      "recordsTotal": {
+        "type": "long"
+      },
+      "body": {
+        "type": "object",
+        "dynamic": "true"
+      }
+    }
+  }
+}';
+
+ my $template = '
+{
+  "template": "' . $PREFIX . 'history_v1-*",
+  "settings": {
+      "number_of_shards": 2,
+      "number_of_replicas": 0,
+      "auto_expand_replicas": "0-1"
+    },
+  "mappings":' . $mapping . '
+}';
+
+print "Creating history template\n" if ($verbose > 0);
+esPut("/_template/${PREFIX}history_v1_template", $template);
+
+my $indices = esGet("/${PREFIX}history_v1-*/_aliases", 1);
+
+print "Updating history mapping for ", scalar(keys %{$indices}), " indices\n" if (scalar(keys %{$indices}) != 0);
+foreach my $i (keys %{$indices}) {
+    progress("$i ");
+    esPut("/$i/history/_mapping", $mapping, 1);
+}
+
+print "\n";
+}
+################################################################################
+
+################################################################################
 sub usersCreate
 {
     my $settings = '
@@ -1685,8 +1779,8 @@ sub usersUpdate
     my $mapping = '
 {
   "user": {
-    "_all": {"enabled": false},
-    "_source": {"enabled": true},
+    "_all": {"enabled": "false"},
+    "_source": {"enabled": "true"},
     "dynamic": "strict",
     "properties": {
       "userId": {
@@ -1790,23 +1884,23 @@ sub createNewAliasesFromOld
 ################################################################################
 sub time2index
 {
-my($type, $t) = @_;
+my($type, $prefix, $t) = @_;
 
     my @t = gmtime($t);
     if ($type eq "hourly") {
-        return sprintf("${PREFIX}sessions-%02d%02d%02dh%02d", $t[5] % 100, $t[4]+1, $t[3], $t[2]);
+        return sprintf("${PREFIX}${prefix}%02d%02d%02dh%02d", $t[5] % 100, $t[4]+1, $t[3], $t[2]);
     }
 
     if ($type eq "daily") {
-        return sprintf("${PREFIX}sessions-%02d%02d%02d", $t[5] % 100, $t[4]+1, $t[3]);
+        return sprintf("${PREFIX}${prefix}%02d%02d%02d", $t[5] % 100, $t[4]+1, $t[3]);
     }
 
     if ($type eq "weekly") {
-        return sprintf("${PREFIX}sessions-%02dw%02d", $t[5] % 100, int($t[7]/7));
+        return sprintf("${PREFIX}${prefix}%02dw%02d", $t[5] % 100, int($t[7]/7));
     }
 
     if ($type eq "monthly") {
-        return sprintf("${PREFIX}sessions-%02dm%02d", $t[5] % 100, $t[4]+1);
+        return sprintf("${PREFIX}${prefix}%02dm%02d", $t[5] % 100, $t[4]+1);
     }
 }
 
@@ -1879,10 +1973,15 @@ sub dbCheck {
     $main::esVersion = int($parts[0]*100*100) + int($parts[1]*100) + int($parts[2]);
 
     if ($main::esVersion < 20400 ||
-        ($main::esVersion >= 50000 && $main::esVersion < 50102)) {
+        ($main::esVersion >= 50000 && $main::esVersion < 50102) ||
+        ($main::esVersion == 50300) ||
+        ($main::esVersion >= 60000)
+    ) {
         print("Currently using Elasticsearch version ", $esversion->{version}->{number}, " which isn't supported\n",
+              "* 5.6.x is recommended\n",
               "* 2.4.x is supported\n",
-              "* 5.1.2 is supported, but not recommended for production yet\n",
+              "* 5.0 - 5.1.1, 5.3.0 are not supported\n",
+              "* 6.x is not supported\n",
               "\n",
               "Instructions: https://github.com/aol/moloch/wiki/FAQ#How_do_I_upgrade_elasticsearch\n",
               "Make sure to restart any viewer or capture after upgrading!\n"
@@ -1985,6 +2084,9 @@ sub parseArgs {
         } elsif ($ARGV[$pos] eq "--replicas") {
             $pos++;
             $REPLICAS = int($ARGV[$pos]);
+        } elsif ($ARGV[$pos] eq "--history") {
+            $pos++;
+            $HISTORY = int($ARGV[$pos]);
         } elsif ($ARGV[$pos] eq "--nooptimize") {
 	    $NOOPTIMIZE = 1;
         } else {
@@ -2043,10 +2145,12 @@ if ($ARGV[1] =~ /^users-?import$/) {
     exit 0;
 } elsif ($ARGV[1] =~ /^(rotate|expire)$/) {
     showHelp("Invalid expire <type>") if ($ARGV[2] !~ /^(hourly|daily|weekly|monthly)$/);
+
+    # First handle sessions expire
     my $indices = esGet("/${PREFIX}sessions-*/_aliases", 1);
 
     my $endTime = time();
-    my $endTimeIndex = time2index($ARGV[2], $endTime);
+    my $endTimeIndex = time2index($ARGV[2], "sessions-", $endTime);
     delete $indices->{$endTimeIndex};
 
     my @startTime = gmtime;
@@ -2065,8 +2169,8 @@ if ($ARGV[1] =~ /^users-?import$/) {
     my $optimizecnt = 0;
     my $startTime = mktime(@startTime);
     while ($startTime <= $endTime) {
-        my $iname = time2index($ARGV[2], $startTime);
-        if (exists $indices->{$iname}) {
+        my $iname = time2index($ARGV[2], "sessions-", $startTime);
+        if (exists $indices->{$iname} && $indices->{$iname}->{OPTIMIZEIT} != 1) {
             $indices->{$iname}->{OPTIMIZEIT} = 1;
             $optimizecnt++;
         }
@@ -2080,7 +2184,7 @@ if ($ARGV[1] =~ /^users-?import$/) {
     dbESVersion();
     $main::userAgent->timeout(3600);
     optimizeOther() unless $NOOPTIMIZE ;
-    printf ("Expiring %s indices, %s optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), $NOOPTIMIZE?"Not":"", commify($optimizecnt));
+    printf ("Expiring %s sessions indices, %s optimizing %s\n", commify(scalar(keys %{$indices}) - $optimizecnt), $NOOPTIMIZE?"Not":"", commify($optimizecnt));
     foreach my $i (sort (keys %{$indices})) {
         progress("$i ");
         if (exists $indices->{$i}->{OPTIMIZEIT}) {
@@ -2089,6 +2193,36 @@ if ($ARGV[1] =~ /^users-?import$/) {
                 esGet("/$i/_flush", 1);
                 esPut("/$i/_settings", '{index: {"number_of_replicas":' . $REPLICAS . '}}', 1);
             }
+        } else {
+            esDelete("/$i", 1);
+        }
+    }
+
+    # Now figure out history expire
+    my $hindices = esGet("/${PREFIX}history_v1-*/_aliases", 1);
+
+    $endTimeIndex = time2index("weekly", "history_v1-", $endTime);
+    delete $hindices->{$endTimeIndex};
+
+    @startTime = gmtime;
+    $startTime[3] -= 7 * $HISTORY;
+
+    $optimizecnt = 0;
+    $startTime = mktime(@startTime);
+    while ($startTime <= $endTime) {
+        my $iname = time2index("weekly", "history_v1-", $startTime);
+        if (exists $hindices->{$iname} && $hindices->{$iname}->{OPTIMIZEIT} != 1) {
+            $hindices->{$iname}->{OPTIMIZEIT} = 1;
+            $optimizecnt++;
+        }
+        $startTime += 24*60*60;
+    }
+
+    printf ("Expiring %s history indices, %s optimizing %s\n", commify(scalar(keys %{$hindices}) - $optimizecnt), $NOOPTIMIZE?"Not":"", commify($optimizecnt));
+    foreach my $i (sort (keys %{$hindices})) {
+        progress("$i ");
+        if (exists $hindices->{$i}->{OPTIMIZEIT}) {
+            esGet("/$i/$main::OPTIMIZE?max_num_segments=1", 1) unless $NOOPTIMIZE ;
         } else {
             esDelete("/$i", 1);
         }
@@ -2113,6 +2247,7 @@ if ($ARGV[1] =~ /^users-?import$/) {
     my $esversion = dbESVersion();
     my $nodes = esGet("/_nodes");
     my $status = esGet("/_stats", 1);
+
     my $sessions = 0;
     my $sessionsBytes = 0;
     my @sessions = grep /^${PREFIX}sessions-/, keys %{$status->{indices}};
@@ -2120,6 +2255,15 @@ if ($ARGV[1] =~ /^users-?import$/) {
         next if ($index !~ /^${PREFIX}sessions-/);
         $sessions += $status->{indices}->{$index}->{primaries}->{docs}->{count};
         $sessionsBytes += $status->{indices}->{$index}->{primaries}->{store}->{size_in_bytes};
+    }
+
+    my $historys = 0;
+    my $historysBytes = 0;
+    my @historys = grep /^${PREFIX}history_v1-/, keys %{$status->{indices}};
+    foreach my $index (@historys) {
+        next if ($index !~ /^${PREFIX}history_v1-/);
+        $historys += $status->{indices}->{$index}->{primaries}->{docs}->{count};
+        $historysBytes += $status->{indices}->{$index}->{primaries}->{store}->{size_in_bytes};
     }
 
     sub printIndex {
@@ -2137,6 +2281,12 @@ if ($ARGV[1] =~ /^users-?import$/) {
     if (scalar(@sessions) > 0) {
         printf "Session Density:     %10s (%s bytes)\n", commify(int($sessions/(scalar(keys %{$nodes->{nodes}})*scalar(@sessions)))),
                                                        commify(int($sessionsBytes/(scalar(keys %{$nodes->{nodes}})*scalar(@sessions))));
+    }
+    printf "History Indices:     %10s\n", commify(scalar(@historys));
+    printf "Histories:           %10s (%s bytes)\n", commify($historys), commify($historysBytes);
+    if (scalar(@historys) > 0) {
+        printf "History Density:     %10s (%s bytes)\n", commify(int($historys/(scalar(keys %{$nodes->{nodes}})*scalar(@historys)))),
+                                                       commify(int($historysBytes/(scalar(keys %{$nodes->{nodes}})*scalar(@historys))));
     }
     printIndex($status, "files_v4");
     printIndex($status, "files_v3");
@@ -2360,6 +2510,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     esDelete("/_template/${PREFIX}sessions_template", 1);
     esDelete("/${PREFIX}fields", 1);
     esDelete("/${PREFIX}fields_v1", 1);
+    esDelete("/${PREFIX}history_v1-*", 1);
     if ($ARGV[1] =~ "init") {
         esDelete("/${PREFIX}users_v3", 1);
         esDelete("/${PREFIX}users_v4", 1);
@@ -2379,6 +2530,7 @@ if ($ARGV[1] =~ /(init|wipe)/) {
     dstatsCreate();
     sessionsUpdate();
     fieldsCreate();
+    historyUpdate();
     if ($ARGV[1] =~ "init") {
         usersCreate();
         queriesCreate();
@@ -2435,15 +2587,18 @@ if ($ARGV[1] =~ /(init|wipe)/) {
         }
 
         esDelete("/_template/${PREFIX}template_1", 1);
+        historyUpdate();
         sessionsUpdate();
         checkForOldIndices();
     } elsif ($main::versionNumber <= 33) {
         createNewAliasesFromOld("stats", "stats_v2", "stats_v1", \&statsCreate);
         usersUpdate();
+        historyUpdate();
         sessionsUpdate();
         checkForOldIndices();
-    } elsif ($main::versionNumber <= 35) {
+    } elsif ($main::versionNumber <= 37) {
         usersUpdate();
+        historyUpdate();
         sessionsUpdate();
         checkForOldIndices();
     } else {

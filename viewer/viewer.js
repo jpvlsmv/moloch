@@ -17,7 +17,7 @@
  */
 'use strict';
 
-var MIN_DB_VERSION = 35;
+var MIN_DB_VERSION = 37;
 
 //// Modules
 //////////////////////////////////////////////////////////////////////////////////
@@ -138,6 +138,7 @@ app.use(function(req, res, next) {
   if (res.setTimeout) {
     res.setTimeout(10 * 60 * 1000); // Increase default from 2 min to 10 min
   }
+
   req.url = req.url.replace(Config.basePath(), "/");
   return next();
 });
@@ -238,12 +239,26 @@ if (Config.get("passwordSecret")) {
       }
     });
   });
+} else if (Config.get("regressionTests", false)) {
+  app.locals.alwaysShowESStatus = true;
+  app.locals.noPasswordSecret   = true;
+  app.use(function(req, res, next) {
+    var username = req.query["molochRegressionUser"] || "anonymous";
+    req.user = {userId: username, enabled: true, createEnabled: username === "anonymous", webEnabled: true, headerAuthEnabled: false, emailSearch: true, removeEnabled: true, settings: {}};
+    Db.getUserCache(username, function(err, suser) {
+        if (!err && suser && suser.found) {
+          req.user.settings = suser._source.settings;
+          req.user.views = suser._source.views;
+        }
+      next();
+    });
+  });
 } else {
   /* Shared password isn't set, who cares about auth, db is only used for settings */
   app.locals.alwaysShowESStatus = true;
   app.locals.noPasswordSecret   = true;
   app.use(function(req, res, next) {
-    req.user = {userId: "anonymous", enabled: true, createEnabled: Config.get("regressionTests", false), webEnabled: true, headerAuthEnabled: false, emailSearch: true, removeEnabled: true, settings: {}};
+    req.user = {userId: "anonymous", enabled: true, createEnabled: false, webEnabled: true, headerAuthEnabled: false, emailSearch: true, removeEnabled: true, settings: {}};
     Db.getUserCache("anonymous", function(err, suser) {
         if (!err && suser && suser.found) {
           req.user.settings = suser._source.settings;
@@ -261,11 +276,11 @@ app.use(function(req, res, next) {
 
   var mrc = {};
 
-  mrc['httpAuthorizationDecode'] = {fields: "http.authorization", func: "{\
-    if (value.substring(0,5) === \"Basic\") \
-      return {name: \"Decoded:\", value: atob(value.substring(6))};\
-    return undefined;\
-  }"};
+  mrc['httpAuthorizationDecode'] = {fields: "http.authorization", func: `{
+    if (value.substring(0,5) === "Basic")
+      return {name: "Decoded:", value: atob(value.substring(6))};
+    return undefined;
+  }`};
 
   for (var key in internals.rightClicks) {
     var rc = internals.rightClicks[key];
@@ -683,17 +698,83 @@ function checkWebEnabled(req, res, next) {
 
   return next();
 }
+
+function logAction(uiPage) {
+  return function(req, res, next) {
+    var log = {
+      timestamp : Math.floor(Date.now()/1000),
+      method    : req.method,
+      userId    : req.user.userId,
+      api       : req._parsedUrl.pathname,
+      query     : req._parsedUrl.query,
+      expression: req.query.expression
+    }
+
+    if (uiPage) { log.uiPage = uiPage; }
+
+    if (req.query.date && parseInt(req.query.date) === -1) {
+      log.range = log.timestamp;
+    } else if(req.query.startTime && req.query.stopTime) {
+      log.range = req.query.stopTime - req.query.startTime;
+    }
+
+    if (req.query.view && req.user.views) {
+      var view = req.user.views[req.query.view];
+      if (view) {
+        log.view = {
+          name: req.query.view,
+          expression: view.expression
+        };
+      }
+    }
+
+    // save the request body
+    var avoidProps  = { password:true, newPassword:true, currentPassword:true };
+    var bodyClone   = {};
+
+    for (var key in req.body) {
+      if (req.body.hasOwnProperty(key) && !avoidProps[key]) {
+        bodyClone[key] = req.body[key];
+      }
+    }
+
+    if (Object.keys(bodyClone).length > 0) {
+      log.body = bodyClone;
+    }
+
+    res.logCounts = function(recordsReturned, recordsFiltered, recordsTotal) {
+      log.recordsReturned = recordsReturned;
+      log.recordsFiltered = recordsFiltered;
+      log.recordsTotal    = recordsTotal;
+    }
+
+    req._molochStartTime = new Date();
+    function finish () {
+      log.queryTime = new Date() - req._molochStartTime;
+      res.removeListener('finish', finish);
+      Db.historyIt(log, function(err, info) {
+        if (err) { console.log('log history error', err, info); }
+      });
+    }
+
+    res.on('finish', finish);
+
+    return next();
+  }
+}
+
+
 //////////////////////////////////////////////////////////////////////////////////
 //// Pages
 //////////////////////////////////////////////////////////////////////////////////
 // APIs disabled in demoMode, needs to be before real callbacks
 if (Config.get('demoMode', false)) {
   console.log("WARNING - Starting in demo mode, some APIs disabled");
-  app.all(['/settings', '/users'], function(req, res) {
+  app.all(['/settings', '/users', '/history/list'], function(req, res) {
     return res.send('Disabled in demo mode.');
   });
 
-  app.get(['/user/settings', '/user/cron'], function(req, res) {
+  app.get(['/user/settings', '/user/cron', '/history/list'], function(req, res) {
     res.status(403);
     return res.send(JSON.stringify({success: false, text: "Disabled in demo mode."}));
   });
@@ -933,7 +1014,7 @@ app.get('/user/settings', function(req, res) {
 });
 
 // updates a user's settings
-app.post('/user/settings/update', checkCookieToken, function(req, res) {
+app.post('/user/settings/update', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -999,7 +1080,7 @@ app.get('/user/views', function(req, res) {
 });
 
 // creates a new view for a user
-app.post('/user/views/create', checkCookieToken, function(req, res) {
+app.post('/user/views/create', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1057,7 +1138,7 @@ app.post('/user/views/create', checkCookieToken, function(req, res) {
 });
 
 // deletes a user's specified view
-app.post('/user/views/delete', checkCookieToken, function(req, res) {
+app.post('/user/views/delete', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1097,7 +1178,7 @@ app.post('/user/views/delete', checkCookieToken, function(req, res) {
 });
 
 // updates a user's specified view
-app.post('/user/views/update', function(req, res) {
+app.post('/user/views/update', logAction(), function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1206,7 +1287,7 @@ app.get('/user/cron', function(req, res) {
 });
 
 // creates a new cron query for a user
-app.post('/user/cron/create', checkCookieToken, function(req, res) {
+app.post('/user/cron/create', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1261,7 +1342,7 @@ app.post('/user/cron/create', checkCookieToken, function(req, res) {
 });
 
 // deletes a user's specified cron query
-app.post('/user/cron/delete', checkCookieToken, function(req, res) {
+app.post('/user/cron/delete', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1287,7 +1368,7 @@ app.post('/user/cron/delete', checkCookieToken, function(req, res) {
 });
 
 // updates a user's specified cron query
-app.post('/user/cron/update', checkCookieToken, function(req, res) {
+app.post('/user/cron/update', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1337,7 +1418,7 @@ app.post('/user/cron/update', checkCookieToken, function(req, res) {
 });
 
 // changes a user's password
-app.post('/user/password/change', checkCookieToken, function(req, res) {
+app.post('/user/password/change', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1403,7 +1484,7 @@ app.get('/user/columns', function(req, res) {
 });
 
 // creates a new custom column configuration for a user
-app.post('/user/columns/create', checkCookieToken, function(req, res) {
+app.post('/user/columns/create', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1467,7 +1548,7 @@ app.post('/user/columns/create', checkCookieToken, function(req, res) {
 });
 
 // deletes a user's specified custom column configuration
-app.post('/user/columns/delete', checkCookieToken, function(req, res) {
+app.post('/user/columns/delete', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1532,7 +1613,7 @@ app.get('/user/spiview/fields', function(req, res) {
 });
 
 // creates a new custom spiview fields configuration for a user
-app.post('/user/spiview/fields/create', checkCookieToken, function(req, res) {
+app.post('/user/spiview/fields/create', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -1594,7 +1675,7 @@ app.post('/user/spiview/fields/create', checkCookieToken, function(req, res) {
 });
 
 // deletes a user's specified custom spiview fields configuration
-app.post('/user/spiview/fields/delete', checkCookieToken, function(req, res) {
+app.post('/user/spiview/fields/delete', [checkCookieToken, logAction()], function(req, res) {
   function error(status, text) {
     res.status(status || 403);
     return res.send(JSON.stringify({ success: false, text: text }));
@@ -2070,6 +2151,24 @@ function buildSessionQuery(req, buildCb) {
     }
   }
 
+  switch (req.query.interval) {
+  case "second":
+    interval = 1;
+    break;
+  case "minute":
+    interval = 60;
+    break;
+  case "hour":
+    interval = 60*60;
+    break;
+  case "day":
+    interval = 60*60*24;
+    break;
+  case "week":
+    interval = 60*60*24*7;
+    break;
+  }
+
   if (req.query.facets) {
     query.aggregations = {mapG1: {terms: {field: "g1", size:1000, min_doc_count:1}},
                           mapG2: {terms: {field: "g2", size:1000, min_doc_count:1}}};
@@ -2252,6 +2351,144 @@ function sessionsListFromIds(req, ids, fields, cb) {
 //////////////////////////////////////////////////////////////////////////////////
 //// APIs
 //////////////////////////////////////////////////////////////////////////////////
+app.get('/history/list', function(req, res) {
+  function error(status, text) {
+    res.status(status || 403);
+    return res.send(JSON.stringify({ success: false, text: text }));
+  }
+
+  var userId;
+  if (req.user.createEnabled) { // user is an admin, they can view all logs
+    // if the admin has requested a specific user
+    if (req.query.userId) { userId = req.query.userId; }
+  } else { // user isn't an admin, so they can only view their own logs
+    if (req.query.userId && req.query.userId !== req.user.userId) { return error(403, 'Need admin privileges'); }
+    userId = req.user.userId;
+  }
+
+  var query = {
+    sort: {},
+    from: +req.query.start  || 0,
+    size: +req.query.length || 1000
+  };
+
+  query.sort[req.query.sortField || 'timestamp'] = { order: req.query.desc === 'true' ? 'desc': 'asc'};
+
+  if (req.query.searchTerm || userId) {
+    query.query = { bool: { must: [] } };
+
+    if (req.query.searchTerm) { // apply search term
+      query.query.bool.must.push({
+        query_string: {
+          query : req.query.searchTerm,
+          fields: ['expression','userId','api','view.name','view.expression']
+        }
+      });
+    }
+
+    if (userId) { // filter on userId
+      query.query.bool.must.push({
+        wildcard: { userId: '*' + userId + '*' }
+      });
+    }
+  }
+
+  if (req.query.api) { // filter on api endpoint
+    if (!query.query) { query.query = { bool: { must: [] } }; }
+    query.query.bool.must.push({
+      wildcard: { api: '*' + req.query.api + '*' }
+    });
+  }
+
+  if (req.query.exists) {
+    if (!query.query) { query.query = { bool: { must: [] } }; }
+    let existsArr = req.query.exists.split(',');
+    for (var i = 0, len = existsArr.length; i < len; ++i) {
+      query.query.bool.must.push({
+        exists: { field:existsArr[i] }
+      });
+    }
+  }
+
+  // filter history table by a time range
+  if (req.query.startTime && req.query.stopTime) {
+    if (! /^[0-9]+$/.test(req.query.startTime)) {
+      req.query.startTime = Date.parse(req.query.startTime.replace("+", " "))/1000;
+    } else {
+      req.query.startTime = parseInt(req.query.startTime, 10);
+    }
+
+    if (! /^[0-9]+$/.test(req.query.stopTime)) {
+      req.query.stopTime = Date.parse(req.query.stopTime.replace("+", " "))/1000;
+    } else {
+      req.query.stopTime = parseInt(req.query.stopTime, 10);
+    }
+
+    if (!query.query) { query.query = { bool: {} }; }
+    query.query.bool.filter = [{
+      range: { timestamp: {
+        gte: req.query.startTime,
+        lte: req.query.stopTime
+      } }
+    }];
+  }
+
+  async.parallel({
+     logs: function (cb) {
+       Db.searchHistory(query, function(err, result) {
+         if (err || result.error) {
+           console.log("ERROR - history logs", err || result.error);
+           return error(500, 'Error retrieving log history - ' + err || result.error);
+         } else {
+           var results = { total:result.hits.total, results:[] };
+           for (var i = 0, ilen = result.hits.hits.length; i < ilen; i++) {
+             var hit = result.hits.hits[i];
+             var log = hit._source;
+             log.id = hit._id;
+             log.index = hit._index;
+             results.results.push(log);
+           }
+           cb(null, results);
+         }
+       });
+     },
+     total: function (cb) {
+       Db.numberOfLogs(cb);
+     }
+   },
+   function(err, results) {
+     var r = {
+       recordsTotal: results.total,
+       recordsFiltered: results.logs.total,
+       data: results.logs.results
+     };
+     res.send(r);
+   });
+});
+
+app.delete('/history/list/:id', function(req, res) {
+  if (!req.user.createEnabled) {
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Need admin privileges' }));
+  }
+
+  if (!req.user.removeEnabled) {
+    res.status(403);
+    return res.send(JSON.stringify({ success: false, text: 'Need remove data privileges' }));
+  }
+
+  Db.deleteHistoryItem(req.params.id, req.query.index, function(err, result) {
+    if (err || result.error) {
+      console.log("ERROR - deleting history item", err || result.error);
+      res.status(500);
+      return res.send(JSON.stringify({ success: false, text: 'Error deleting history item' }));
+    } else {
+      res.send(JSON.stringify({success: true, text: "Deleted history item successfully"}));
+    }
+  });
+})
+
+
 app.get('/fields', function(req, res) {
   if (!app.locals.fieldsMap) {
     res.status(404);
@@ -2265,7 +2502,7 @@ app.get('/fields', function(req, res) {
   }
 });
 
-app.get('/file/list', function(req, res) {
+app.get('/file/list', logAction('files'), function(req, res) {
   var columns = ["num", "node", "name", "locked", "first", "filesize"];
 
   var query = {_source: columns,
@@ -2312,6 +2549,7 @@ app.get('/file/list', function(req, res) {
     var r = {recordsTotal: results.total,
              recordsFiltered: results.files.total,
              data: results.files.results};
+    res.logCounts(r.data.length, r.recordsFiltered, r.total);
     res.send(r);
   });
 });
@@ -2382,7 +2620,7 @@ app.get('/esstats.json', function(req, res) {
       var write = 0;
 
       var oldnode = internals.previousNodeStats[0][nodes[n]];
-      if (node.fs.io_stats !== undefined && oldnode.fs.io_stats !== undefined) {
+      if (node.fs.io_stats !== undefined && oldnode.fs.io_stats !== undefined && "total" in node.fs.io_stats) {
         var timediffsec = (node.timestamp - oldnode.timestamp)/1000.0;
         read = Math.ceil((node.fs.io_stats.total.read_kilobytes - oldnode.fs.io_stats.total.read_kilobytes)/timediffsec*1024);
         write = Math.ceil((node.fs.io_stats.total.write_kilobytes - oldnode.fs.io_stats.total.write_kilobytes)/timediffsec*1024);
@@ -2804,7 +3042,26 @@ function flattenFields(fields) {
   return fields;
 }
 
-app.get('/sessions.json', function(req, res) {
+app.get('/buildQuery.json', logAction('query'), function(req, res) {
+
+  buildSessionQuery(req, function(bsqErr, query, indices) {
+    if (bsqErr) {
+      res.send({ recordsTotal: 0
+               , recordsFiltered: 0
+               , bsqErr: bsqErr.toString()
+               });
+      return;
+    }
+
+    if (req.query.fields) {
+      query._source = queryValueToArray(req.query.fields);
+    }
+
+    res.send({"esquery": query, "indices": indices});
+  });
+});
+
+app.get('/sessions.json', logAction('sessions'), function(req, res) {
   var i;
 
   var graph = {};
@@ -2901,6 +3158,7 @@ app.get('/sessions.json', function(req, res) {
                health: results.health,
                map: map,
                data: (results.sessions?results.sessions.results:[])};
+      res.logCounts(r.data.length, r.recordsFiltered, r.recordsTotal);
       try {
         res.send(r);
       } catch (c) {
@@ -2909,7 +3167,7 @@ app.get('/sessions.json', function(req, res) {
   });
 });
 
-app.get('/spigraph.json', function(req, res) {
+app.get('/spigraph.json', logAction('spigraph'), function(req, res) {
   function error(text) {
     res.status(403);
     return res.send(JSON.stringify({success: false, text: text}));
@@ -3034,7 +3292,7 @@ app.get('/spigraph.json', function(req, res) {
   });
 });
 
-app.get('/spiview.json', function(req, res) {
+app.get('/spiview.json', logAction('spiview'), function(req, res) {
   if (req.query.spi === undefined) {
     return res.send({spi:{}, recordsTotal: 0, recordsFiltered: 0});
   }
@@ -3196,6 +3454,7 @@ app.get('/spiview.json', function(req, res) {
                protocols: protocols,
                bsqErr: bsqErr
           };
+          res.logCounts(r.spi.count, r.recordsFiltered, r.total);
           try {
             res.send(r);
           } catch (c) {
@@ -3206,7 +3465,7 @@ app.get('/spiview.json', function(req, res) {
   });
 });
 
-app.get('/dns.json', function(req, res) {
+app.get('/dns.json', logAction(), function(req, res) {
   console.log("dns.json", req.query);
   dns.reverse(req.query.ip, function (err, data) {
     if (err) {
@@ -3394,7 +3653,7 @@ function buildConnections(req, res, cb) {
   });
 }
 
-app.get('/connections.json', function(req, res) {
+app.get('/connections.json', logAction('connections'), function(req, res) {
   var health;
   Db.healthCache(function(err, h) {health = h;});
   buildConnections(req, res, function (err, nodes, links, total) {
@@ -3406,7 +3665,7 @@ app.get('/connections.json', function(req, res) {
   });
 });
 
-app.get('/connections.csv', function(req, res) {
+app.get('/connections.csv', logAction(), function(req, res) {
   res.setHeader("Content-Type", "application/force-download");
   var seperator = req.query.seperator || ",";
   buildConnections(req, res, function (err, nodes, links, total) {
@@ -3488,7 +3747,7 @@ function csvListWriter(req, res, list, fields, pcapWriter, extension) {
   res.end();
 }
 
-app.get(/\/sessions.csv.*/, function(req, res) {
+app.get(/\/sessions.csv.*/, logAction(), function(req, res) {
   noCache(req, res, "text/csv");
   // default fields to display in csv
   var fields = ["pr", "fp", "lp", "a1", "p1", "g1", "a2", "p2", "g2", "by", "db", "pa", "no"];
@@ -3512,7 +3771,7 @@ app.get(/\/sessions.csv.*/, function(req, res) {
   }
 });
 
-app.get('/uniqueValue.json', function(req, res) {
+app.get('/uniqueValue.json', logAction(), function(req, res) {
   if (!Config.get('valueAutoComplete', !Config.get('multiES', false))) {
     res.send([]);
     return;
@@ -3547,7 +3806,7 @@ app.get('/uniqueValue.json', function(req, res) {
   });
 });
 
-app.get('/unique.txt', function(req, res) {
+app.get('/unique.txt', logAction(), function(req, res) {
   if (req.query.field === undefined && req.query.exp === undefined) {
     return res.send("Missing field or exp parameter");
   }
@@ -3729,12 +3988,16 @@ app.get('/unique.txt', function(req, res) {
 });
 
 function processSessionIdDisk(session, headerCb, packetCb, endCb, limit) {
+  var fields;
+
   function processFile(pcap, pos, i, nextCb) {
     pcap.ref();
     pcap.readPacket(pos, function(packet) {
       switch(packet) {
       case null:
-        endCb("Error loading data for session " + session._id, null);
+        var msg = util.format(session._id, "in file", pcap.filename, "couldn't read packet at", pos, "packet #", i, "of", fields.ps.length);
+        console.log("ERROR - processSessionIdDisk -", msg);
+        endCb(msg, null);
         break;
       case undefined:
         break;
@@ -3745,8 +4008,6 @@ function processSessionIdDisk(session, headerCb, packetCb, endCb, limit) {
       pcap.unref();
     });
   }
-
-  var fields;
 
   fields = session._source || session.fields;
 
@@ -3882,7 +4143,8 @@ function processSessionIdAndDecode(id, numPackets, doneCb) {
   },
   function(err, session) {
     if (err) {
-      return doneCb("error");
+      console.log("ERROR - processSessionIdAndDecode", err);
+      return doneCb(err);
     }
     packets = packets.filter(Boolean);
     if (packets.length === 0) {
@@ -3890,7 +4152,7 @@ function processSessionIdAndDecode(id, numPackets, doneCb) {
     } else if (packets[0].ip === undefined) {
       return doneCb(null, session, []);
     } else if (packets[0].ip.p === 1) {
-      Pcap.reassemble_icmp(packets, function(err, results) {
+      Pcap.reassemble_icmp(packets, numPackets, function(err, results) {
         return doneCb(err, session, results);
       });
     } else if (packets[0].ip.p === 6) {
@@ -3900,11 +4162,11 @@ function processSessionIdAndDecode(id, numPackets, doneCb) {
       } else {
         key = Pcap.inet_ntoa(session.a1);
       }
-      Pcap.reassemble_tcp(packets, key + ':' + session.p1, function(err, results) {
+      Pcap.reassemble_tcp(packets, numPackets, key + ':' + session.p1, function(err, results) {
         return doneCb(err, session, results);
       });
     } else if (packets[0].ip.p === 17) {
-      Pcap.reassemble_udp(packets, function(err, results) {
+      Pcap.reassemble_udp(packets, numPackets, function(err, results) {
         return doneCb(err, session, results);
       });
     } else {
@@ -4105,8 +4367,8 @@ function localSessionDetail(req, res) {
     cb(null);
   },
   function(err, session) {
-    if (err && session === null) {
-      return res.end("Couldn't look up SPI data, error for session " + req.params.id + " Error: " +  err);
+    if (err) {
+      return res.end("Problem loading packets for " + req.params.id + " Error: " + err);
     }
     session.id = req.params.id;
 
@@ -4135,7 +4397,7 @@ function localSessionDetail(req, res) {
       session._err = "Couldn't decode pcap file, check viewer log";
       localSessionDetailReturn(req, res, session, []);
     } else if (packets[0].ip.p === 1) {
-      Pcap.reassemble_icmp(packets, function(err, results) {
+      Pcap.reassemble_icmp(packets, +req.query.packets || 200, function(err, results) {
         session._err = err;
         localSessionDetailReturn(req, res, session, results || []);
       });
@@ -4146,17 +4408,17 @@ function localSessionDetail(req, res) {
       } else {
         key = Pcap.inet_ntoa(session.a1);
       }
-      Pcap.reassemble_tcp(packets, key + ':' + session.p1, function(err, results) {
+      Pcap.reassemble_tcp(packets, +req.query.packets || 200, key + ':' + session.p1, function(err, results) {
         session._err = err;
         localSessionDetailReturn(req, res, session, results || []);
       });
     } else if (packets[0].ip.p === 17) {
-      Pcap.reassemble_udp(packets, function(err, results) {
+      Pcap.reassemble_udp(packets, +req.query.packets || 200, function(err, results) {
         session._err = err;
         localSessionDetailReturn(req, res, session, results || []);
       });
     } else if (packets[0].ip.p === 58) {
-      Pcap.reassemble_icmp(packets, function(err, results) {
+      Pcap.reassemble_icmp(packets, +req.query.packets || 200, function(err, results) {
         session._err = err;
         localSessionDetailReturn(req, res, session, results || []);
       });
@@ -4171,7 +4433,7 @@ function localSessionDetail(req, res) {
 /**
  * Get SPI data for a session
  */
-app.get('/:nodeName/session/:id/detail', function(req, res) {
+app.get('/:nodeName/session/:id/detail', logAction(), function(req, res) {
   Db.getWithOptions(Db.id2Index(req.params.id), 'session', req.params.id, {}, function(err, session) {
     if (err || !session.found) {
       return res.end("Couldn't look up SPI data, error for session " + req.params.id + " Error: " +  err);
@@ -4221,7 +4483,7 @@ app.get('/:nodeName/session/:id/detail', function(req, res) {
 /**
  * Get Session Packets
  */
-app.get('/:nodeName/session/:id/packets', function(req, res) {
+app.get('/:nodeName/session/:id/packets', logAction(), function(req, res) {
   isLocalView(req.params.nodeName, function () {
      noCache(req, res);
      req.packetsOnly = true;
@@ -4322,7 +4584,7 @@ app.get('/:nodeName/:id/bodypng/:bodyType/:bodyNum/:bodyName', checkProxyRequest
 });
 
 function writePcap(res, id, options, doneCb) {
-  var b = new Buffer(0xfffe);
+  var b = Buffer.alloc(0xfffe);
   var nextPacket = 0;
   var boffset = 0;
   var packets = {};
@@ -4346,7 +4608,7 @@ function writePcap(res, id, options, doneCb) {
       if (boffset + buffer.length > b.length) {
         res.write(b.slice(0, boffset));
         boffset = 0;
-        b = new Buffer(0xfffe);
+        b = Buffer.alloc(0xfffe);
       }
       buffer.copy(b, boffset, 0, buffer.length);
       boffset += buffer.length;
@@ -4363,7 +4625,7 @@ function writePcap(res, id, options, doneCb) {
 }
 
 function writePcapNg(res, id, options, doneCb) {
-  var b = new Buffer(0xfffe);
+  var b = Buffer.alloc(0xfffe);
   var boffset = 0;
 
   processSessionId(id, true, function (pcap, buffer) {
@@ -4376,7 +4638,7 @@ function writePcapNg(res, id, options, doneCb) {
     if (boffset + buffer.length + 20 > b.length) {
       res.write(b.slice(0, boffset));
       boffset = 0;
-      b = new Buffer(0xfffe);
+      b = Buffer.alloc(0xfffe);
     }
 
     /* Need to write the ng block, and conver the old timestamp */
@@ -4413,7 +4675,7 @@ function writePcapNg(res, id, options, doneCb) {
     var json = JSON.stringify(session);
 
     var len = ((json.length + 20 + 3) >> 2) << 2;
-    b = new Buffer(len);
+    b = Buffer.alloc(len);
 
     b.writeUInt32LE(0x80808080, 0);               // Block Type
     b.writeUInt32LE(len, 4);                      // Block Len 1
@@ -4450,7 +4712,7 @@ app.get('/:nodeName/raw/:id.png', checkProxyRequest, function(req, res) {
     return res.send (internals.emptyPNG);
   }
 
-  processSessionIdAndDecode(req.params.id, 100, function(err, session, results) {
+  processSessionIdAndDecode(req.params.id, 1000, function(err, session, results) {
     if (err) {
       return res.send (internals.emptyPNG);
     }
@@ -4459,7 +4721,7 @@ app.get('/:nodeName/raw/:id.png', checkProxyRequest, function(req, res) {
     for (i = (req.query.type !== 'dst'?0:1), ilen = results.length; i < ilen; i+=2) {
       size += results[i].data.length + 2*internals.PNG_LINE_WIDTH - (results[i].data.length % internals.PNG_LINE_WIDTH);
     }
-    var buffer = new Buffer(size);
+    var buffer = Buffer.alloc(size);
     var pos = 0;
     if (size === 0) {
       return res.send (internals.emptyPNG);
@@ -4534,7 +4796,7 @@ function sessionsPcapList(req, res, list, pcapWriter, extension) {
     function () {
       // Get from remote DISK
       getViewUrl(fields.no, function(err, viewUrl, client) {
-        var buffer = new Buffer(fields.pa*20 + fields.by);
+        var buffer = Buffer.alloc(fields.pa*20 + fields.by);
         var bufpos = 0;
         var info = url.parse(viewUrl);
         info.path = Config.basePath(fields.no) + fields.no + "/" + extension + "/" + item._id + "." + extension;
@@ -4545,7 +4807,7 @@ function sessionsPcapList(req, res, list, pcapWriter, extension) {
         var preq = client.request(info, function(pres) {
           pres.on('data', function (chunk) {
             if (bufpos + chunk.length > buffer.length) {
-              var tmp = new Buffer(buffer.length + chunk.length*10);
+              var tmp = Buffer.alloc(buffer.length + chunk.length*10);
               buffer.copy(tmp, 0, 0, bufpos);
               buffer = tmp;
             }
@@ -4591,38 +4853,12 @@ function sessionsPcap(req, res, pcapWriter, extension) {
   }
 }
 
-app.get(/\/sessions.pcapng.*/, function(req, res) {
+app.get(/\/sessions.pcapng.*/, logAction(), function(req, res) {
   return sessionsPcap(req, res, writePcapNg, "pcapng");
 });
 
-app.get(/\/sessions.pcap.*/, function(req, res) {
+app.get(/\/sessions.pcap.*/, logAction(), function(req, res) {
   return sessionsPcap(req, res, writePcap, "pcap");
-});
-
-
-app.post('/changeSettings', checkToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  Db.getUser(req.token.suserId, function(err, user) {
-    if (err || !user.found) {
-      console.log("changeSettings failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.settings = req.body;
-    delete user.settings.token;
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("changeSettings error", err, info);
-        return error("Change settings update failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Changed password successfully"}));
-    });
-  });
 });
 
 app.get('/user/settings', function(req, res) {
@@ -4661,33 +4897,6 @@ app.get('/user/views', function(req, res) {
   });
 });
 
-app.post('/user/views/delete', checkCookieToken, function(req, res) {
-  function error(text) {
-    return res.send(JSON.stringify({success: false, text: text}));
-  }
-
-  if (!req.body.view) { return error("Missing view"); }
-
-  Db.getUser(req.token.userId, function(err, user) {
-    if (err || !user.found) {
-      console.log("Delete view failed", err, user);
-      return error("Unknown user");
-    }
-
-    user = user._source;
-    user.views = user.views || {};
-    delete user.views[req.body.view];
-
-    Db.setUser(user.userId, user, function(err, info) {
-      if (err) {
-        console.log("Delete view failed", err, info);
-        return error("Delete view failed");
-      }
-      return res.send(JSON.stringify({success: true, text: "Deleted view successfully"}));
-    });
-  });
-});
-
 internals.usersMissing = {
   userId: "",
   userName: "",
@@ -4699,7 +4908,7 @@ internals.usersMissing = {
   emailSearch: 0,
   removeEnabled: 0
 };
-app.post('/user/list', function(req, res) {
+app.post('/user/list', logAction('users'), function(req, res) {
   var columns = ["userId", "userName", "expression", "enabled", "createEnabled", "webEnabled", "headerAuthEnabled", "emailSearch", "removeEnabled"];
 
   var query = {_source: columns,
@@ -4755,7 +4964,7 @@ app.post('/user/list', function(req, res) {
   });
 });
 
-app.post('/user/create', checkCookieToken, function(req, res) {
+app.post('/user/create', logAction(), checkCookieToken, function(req, res) {
   function error(text) {
     res.status(403);
     return res.send(JSON.stringify({success: false, text: text}));
@@ -4804,7 +5013,7 @@ app.post('/user/create', checkCookieToken, function(req, res) {
   });
 });
 
-app.post('/user/delete', checkCookieToken, function(req, res) {
+app.post('/user/delete', logAction(), checkCookieToken, function(req, res) {
   function error(text) {
     res.status(403);
     return res.send(JSON.stringify({success: false, text: text}));
@@ -4825,7 +5034,7 @@ app.post('/user/delete', checkCookieToken, function(req, res) {
   });
 });
 
-app.post('/user/update', checkCookieToken, function(req, res) {
+app.post('/user/update', logAction(), checkCookieToken, function(req, res) {
   function error(text) {
     res.status(403);
     return res.send(JSON.stringify({success: false, text: text}));
@@ -4871,7 +5080,7 @@ app.post('/user/update', checkCookieToken, function(req, res) {
     user.removeEnabled = req.body.removeEnabled === true;
 
     // Can only change createEnabled if it is currently turned on
-    if (req.body.createEnabled !== undefined && req.user.createEnabled && req.body.createEnabled) {
+    if (req.body.createEnabled !== undefined && req.user.createEnabled) {
       user.createEnabled = req.body.createEnabled === true;
     }
 
@@ -4882,7 +5091,7 @@ app.post('/user/update', checkCookieToken, function(req, res) {
   });
 });
 
-app.post('/state/:name', function(req, res) {
+app.post('/state/:name', logAction(), function(req, res) {
   function error(text) {
     return res.send(JSON.stringify({success: false, text: text}));
   }
@@ -4953,7 +5162,8 @@ function addTagsList(allTagIds, allTagNames, list, doneCb) {
     // Do the ES update
     var document = {
       doc: {
-        ta: fields.ta
+        ta: fields.ta,
+        tacnt: fields.ta.length
       }
     };
 
@@ -4993,22 +5203,30 @@ function removeTagsList(res, allTagIds, allTagNames, list) {
       }
     }
 
-    // Do the ES update
-    var document = {
-      doc: {
-        ta: fields.ta
-      }
-    };
-
-    // Do the same for tags-term if it exists.  (it won't for old sessions)
-    if (fields["tags-term"]) {
-      for (var i = 0, ilen = allTagNames.length; i < ilen; i++) {
-        var pos = fields["tags-term"].indexOf(allTagNames[i]);
-        if (pos !== -1) {
-          fields["tags-term"].splice(pos, 1);
+    if (fields.ta.length === 0) {
+      // Remove fields if there are no tags, so tags.cnt == EXISTS! query still behaves normally
+      var document = {
+        script: "ctx._source.remove(\"ta\");ctx._source.remove(\"tacnt\");ctx._source.remove(\"tags-term\");"
+      };
+    } else {
+      // Do the ES update
+      var document = {
+        doc: {
+          ta: fields.ta,
+          tacnt: fields.ta.length
         }
+      };
+
+      // Do the same for tags-term if it exists.  (it won't for old sessions)
+      if (fields["tags-term"]) {
+        for (var i = 0, ilen = allTagNames.length; i < ilen; i++) {
+          var pos = fields["tags-term"].indexOf(allTagNames[i]);
+          if (pos !== -1) {
+            fields["tags-term"].splice(pos, 1);
+          }
+        }
+        document.doc["tags-term"] = fields["tags-term"];
       }
-      document.doc["tags-term"] = fields["tags-term"];
     }
 
     Db.update(Db.id2Index(session._id), 'session', session._id, document, function(err, data) {
@@ -5038,7 +5256,7 @@ function mapTags(tags, prefix, tagsCb) {
   });
 }
 
-app.post('/addTags', function(req, res) {
+app.post('/addTags', logAction(), function(req, res) {
   var tags = [];
   if (req.body.tags) {
     tags = req.body.tags.replace(/[^-a-zA-Z0-9_:,]/g, "").split(",");
@@ -5067,7 +5285,7 @@ app.post('/addTags', function(req, res) {
   });
 });
 
-app.post('/removeTags', function(req, res) {
+app.post('/removeTags', logAction(), function(req, res) {
   if (!req.user.removeEnabled) {
     return res.send(JSON.stringify({success: false, text: "Need remove data privileges"}));
   }
@@ -5124,7 +5342,7 @@ function searchAndTagList(allTagIds, list, doneCb) {
   }, doneCb);
 }
 
-app.post('/searchAndTag', function(req, res) {
+app.post('/searchAndTag', logAction(), function(req, res) {
   var tags = [];
   var regex = req.body.regex;
   if (req.body.tags) {
@@ -5164,7 +5382,7 @@ app.post('/searchAndTag', function(req, res) {
 
 function pcapScrub(req, res, id, entire, endCb) {
   if (pcapScrub.scrubbingBuffers === undefined) {
-    pcapScrub.scrubbingBuffers = [new Buffer(5000), new Buffer(5000), new Buffer(5000)];
+    pcapScrub.scrubbingBuffers = [Buffer.alloc(5000), Buffer.alloc(5000), Buffer.alloc(5000)];
     pcapScrub.scrubbingBuffers[0].fill(0);
     pcapScrub.scrubbingBuffers[1].fill(1);
     var str = "Scrubbed! Hoot! ";
@@ -5319,7 +5537,7 @@ function scrubList(req, res, entire, list) {
   });
 }
 
-app.post('/scrub', function(req, res) {
+app.post('/scrub', logAction(), function(req, res) {
   if (!req.user.removeEnabled) {
     return res.send(JSON.stringify({success: false, text: "Need remove data privileges"}));
   }
@@ -5340,7 +5558,7 @@ app.post('/scrub', function(req, res) {
   }
 });
 
-app.post('/delete', function(req, res) {
+app.post('/delete', logAction(), function(req, res) {
   if (!req.user.removeEnabled) {
     return res.send(JSON.stringify({success: false, text: "Need remove data privileges"}));
   }
@@ -5389,10 +5607,10 @@ function sendSessionWorker(options, cb) {
     var buffer;
     if (err || !packetshdr) {
       console.log("WARNING - No PCAP only sending SPI data err:", err);
-      buffer = new Buffer(0);
+      buffer = Buffer.alloc(0);
       ps = [];
     } else {
-      buffer = new Buffer(packetshdr.length + packetslen);
+      buffer = Buffer.alloc(packetshdr.length + packetslen);
       var pos = 0;
       packetshdr.copy(buffer);
       pos += packetshdr.length;
@@ -5457,7 +5675,7 @@ function sendSessionWorker(options, cb) {
     });
 
     var sessionStr = JSON.stringify(session);
-    var b = new Buffer(12);
+    var b = Buffer.alloc(12);
     b.writeUInt32BE(Buffer.byteLength(sessionStr), 0);
     b.writeUInt32BE(buffer.length, 8);
     preq.write(b);
@@ -5877,7 +6095,10 @@ app.use('/cyberchef.htm', function(req, res) {
  * sends them to cyberchef */
 app.get("/:nodeName/session/:id/cyberchef", checkWebEnabled, checkProxyRequest, function(req, res) {
   processSessionIdAndDecode(req.params.id, 10000, function(err, session, results) {
-    if (err) { return res.send("Error"); }
+    if (err) {
+      console.log("ERROR - /cyberchef.htm", err);
+      return res.end("Error - " + err);
+    }
 
     let data = '';
     for (var i = (req.query.type !== 'dst'?0:1), ilen = results.length; i < ilen; i+=2) {

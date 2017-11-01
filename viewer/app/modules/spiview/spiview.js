@@ -77,7 +77,6 @@
           });
       }
 
-      let initialized;
       this.$scope.$on('change:search', (event, args) => {
         // either (startTime && stopTime) || date
         if (args.startTime && args.stopTime) {
@@ -92,11 +91,13 @@
 
         _query.expression = this.query.expression = args.expression;
         if (args.bounding) {_query.bounding = this.query.bounding = args.bounding;}
+        if (args.interval) {_query.interval = this.query.interval = args.interval;}
 
         this.query.view = args.view;
 
         // don't issue search when the first change:search event is fired
-        if (!initialized) { initialized = true; return; }
+        // fields are needed first to complete requests
+        if (!this.fields) { return; }
 
         newQuery = true;
 
@@ -384,7 +385,7 @@
             this.dataLoading = false;
             pendingPromise = null;
           });
-      } else {
+      } else if (this.fields) {
         // if we couldn't figure out the fields to request,
         // request the default ones
         this.getSpiData(defaultSpi);
@@ -417,6 +418,7 @@
         stopTime  : this.query.stopTime,
         expression: this.query.expression,
         bounding  : this.query.bounding,
+        interval  : this.query.interval,
         view      : this.query.view
       };
 
@@ -824,7 +826,7 @@
    */
   angular.module('moloch')
     .component('molochSpiview', {
-      template  : require('html!./spiview.html'),
+      template  : require('./spiview.html'),
       controller: SpiviewController
     });
 

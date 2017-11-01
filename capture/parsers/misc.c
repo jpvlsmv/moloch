@@ -106,14 +106,24 @@ void ntp_classify(MolochSession_t *session, const unsigned char *UNUSED(data), i
     moloch_session_add_protocol(session, "ntp");
 }
 /******************************************************************************/
-void snmp_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
+void snmp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
+    uint32_t apc, atag, alen;
+    BSB bsb;
 
-    if (session->port2 != 161 ||  // snmp port
-            len < 16              // min length
-       ) {
+    BSB_INIT(bsb, data, len);
+    unsigned char *value = moloch_parsers_asn_get_tlv(&bsb, &apc, &atag, &alen);
+
+    if (!value || atag != 16 || alen < 16)
         return;
-    }
+
+    BSB_INIT(bsb, value, alen);
+
+    value = moloch_parsers_asn_get_tlv(&bsb, &apc, &atag, &alen);
+
+    if (!value || atag != 2 || alen != 1 || value[0] > 3)
+        return;
+
     moloch_session_add_protocol(session, "snmp");
 }
 /******************************************************************************/
@@ -199,6 +209,13 @@ void thrift_classify(MolochSession_t *session, const unsigned char *data, int le
 {
     if (len > 20 && data[4] == 0x80 && data[5] == 0x01 && data[6] == 0)
     moloch_session_add_protocol(session, "thrift");
+}
+/******************************************************************************/
+void rip_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *UNUSED(uw))
+{
+    if (session->port2 != 520 &&  session->port1 != 520)
+        return;
+    moloch_session_add_protocol(session, "rip");
 }
 /******************************************************************************/
 #define PARSERS_CLASSIFY_BOTH(_name, _uw, _offset, _str, _len, _func) \
@@ -307,6 +324,18 @@ void moloch_parser_init()
     moloch_parsers_classifier_register_tcp("stream-ihscp", "stream-ihscp", 0, (unsigned char*)"\xa4\x00\x00\x00\x56\x54\x30\x31", 8, misc_add_protocol_classify);
 
     moloch_parsers_classifier_register_tcp("honeywell-tcc", "honeywell-tcc", 0, (unsigned char*)"\x43\x42\x4b\x50\x50\x52\x05\x50", 8, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_tcp("pjl", "pjl", 0, (unsigned char*)"\x1b\x25\x2d\x31\x32\x33\x34\x35", 8, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_tcp("pjl", "pjl", 0, (unsigned char*)"\x40\x50\x4a\x4c\x20", 5, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_tcp("dcerpc", "dcerpc", 0, (unsigned char*)"\x05\x00\x0b", 3, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_udp("rip", NULL, 0, (unsigned char*)"\x01\x01\x00\x00", 4, rip_classify);
+    moloch_parsers_classifier_register_udp("rip", NULL, 0, (unsigned char*)"\x01\x02\x00\x00", 4, rip_classify);
+    moloch_parsers_classifier_register_udp("rip", NULL, 0, (unsigned char*)"\x02\x01\x00\x00", 4, rip_classify);
+    moloch_parsers_classifier_register_udp("rip", NULL, 0, (unsigned char*)"\x02\x02\x00\x00", 4, rip_classify);
+
+    moloch_parsers_classifier_register_tcp("nzsql", "nzsql", 0, (unsigned char*)"\x00\x00\x00\x08\x00\x01\x00\x03", 8, misc_add_protocol_classify);
 
     userField = moloch_field_by_db("user");
 }

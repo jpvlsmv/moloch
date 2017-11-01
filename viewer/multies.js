@@ -27,7 +27,6 @@ try {
 var Config         = require('./config.js'),
     express        = require('express'),
     async          = require('async'),
-    sprintf        = require('./public/sprintf.js'),
     os             = require('os'),
     util           = require('util'),
     URL            = require('url'),
@@ -62,8 +61,8 @@ function saveBody (req, res, next) {
   // parse
   var buf = '';
   req.setEncoding('utf8');
-  req.on('data', function(chunk){ buf += chunk; });
-  req.on('end', function(){
+  req.on('data', (chunk) => { buf += chunk; });
+  req.on('end', () => {
     req.body = buf;
     next();
   });
@@ -109,7 +108,7 @@ function node2Prefix(node) {
 }
 
 function simpleGather(req, res, bodies, doneCb) {
-  async.map(nodes, function (node, asyncCb) {
+  async.map(nodes, (node, asyncCb) => {
     var result = "";
     var url = node2Url(node) + req.url;
     var prefix = node2Prefix(node);
@@ -125,13 +124,13 @@ function simpleGather(req, res, bodies, doneCb) {
       info.agent  = httpAgent;
       client = http;
     }
-    var preq = client.request(info, function(pres) {
-      pres.on('data', function (chunk) {
+    var preq = client.request(info, (pres) => {
+      pres.on('data', (chunk) => {
         result += chunk.toString();
       });
-      pres.on('end', function () {
+      pres.on('end', () => {
         if (result.length) {
-          result = result.replace(new RegExp('(index":\s*|[,{]|  )"' + prefix + "(sessions|stats|tags|dstats|sequence|files|users)", "g"), "$1\"MULTIPREFIX_$2");
+          result = result.replace(new RegExp('(index":\s*|[,{]|  )"' + prefix + "(sessions|stats|tags|dstats|sequence|files|users|history)", "g"), "$1\"MULTIPREFIX_$2");
           result = result.replace(new RegExp('(index":\s*)"' + prefix + "(fields_v1)\"", "g"), "$1\"MULTIPREFIX_$2\"");
           result = JSON.parse(result);
         } else {
@@ -148,7 +147,7 @@ function simpleGather(req, res, bodies, doneCb) {
         preq.end(req.body);
       }
     }
-    preq.on('error', function (e) {
+    preq.on('error', (e) => {
       console.log("Request error with node", node, e);
     });
     preq.end();
@@ -174,7 +173,7 @@ function shallowAdd(obj1, obj2) {
 }
 
 function simpleGatherCopy(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
       shallowCopy(obj.nodes, results[i].nodes);
@@ -184,7 +183,7 @@ function simpleGatherCopy(req, res) {
 }
 
 function simpleGatherAdd(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
       shallowAdd(obj, results[i]);
@@ -201,8 +200,8 @@ app.get("/_cluster/health", simpleGatherAdd);
 
 app.get("/:index/_aliases", simpleGatherCopy);
 
-app.get("/:index/_status", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+app.get("/:index/_status", (req, res) => {
+  simpleGather(req, res, null, (err, results) => {
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
       for (var index in results[i].indices) {
@@ -218,8 +217,8 @@ app.get("/:index/_status", function(req, res) {
   });
 });
 
-app.get("/:index/_stats", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+app.get("/:index/_stats", (req, res) => {
+  simpleGather(req, res, null, (err, results) => {
     //console.log("DEBUG - _stats results", util.inspect(results, false, 50));
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
@@ -236,8 +235,8 @@ app.get("/:index/_stats", function(req, res) {
   });
 });
 
-app.get("/MULTIPREFIX_dstats/version/version", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+app.get("/MULTIPREFIX_dstats/version/version", (req, res) => {
+  simpleGather(req, res, null, (err, results) => {
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
       if (results[i]._source.version < obj._source.version) {
@@ -248,14 +247,14 @@ app.get("/MULTIPREFIX_dstats/version/version", function(req, res) {
   });
 });
 
-app.get("/users/user/:user", function(req, res) {
-  clients[nodes[0]].get({index: "users", type: "user", id: req.params.user}, function(err, result) {
+app.get("/users/user/:user", (req, res) => {
+  clients[nodes[0]].get({index: "users", type: "user", id: req.params.user}, (err, result) => {
     res.send(result);
   });
 });
 
-app.get("/:index/:type/_search", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+app.get("/:index/:type/_search", (req, res) => {
+  simpleGather(req, res, null, (err, results) => {
     var obj = results[0];
     for (var i = 1; i < results.length; i++) {
       if (results[i].error) {
@@ -268,14 +267,14 @@ app.get("/:index/:type/_search", function(req, res) {
   });
 });
 
-app.get("/MULTIPREFIX_sessions-*/:type/:id", function(req, res) {
+app.get("/MULTIPREFIX_sessions-*/:type/:id", (req, res) => {
   function fixTags(node, container, field, doneCb) {
     if (!container || !container[field]) {
       return doneCb(null);
     }
 
-    async.map(container[field], function (item, cb) {
-      tagIdToName(node, item, function (name) {
+    async.map(container[field], (item, cb) => {
+      tagIdToName(node, item, (name) => {
         cb(null, name);
       });
     },
@@ -285,7 +284,7 @@ app.get("/MULTIPREFIX_sessions-*/:type/:id", function(req, res) {
     });
   }
 
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     for (var i = 0; i < results.length; i++) {
       if (results[i].found) {
         async.parallel([
@@ -297,7 +296,7 @@ app.get("/MULTIPREFIX_sessions-*/:type/:id", function(req, res) {
           },
           function(parallelCb) {
             fixTags(results[i]._node, results[i]._source, "hh2", parallelCb);
-          }], function () {
+          }], () => {
             return res.send(results[i]);
           });
         return;
@@ -308,7 +307,7 @@ app.get("/MULTIPREFIX_sessions-*/:type/:id", function(req, res) {
 });
 
 app.get("/:index/:type/:id", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     for (var i = 0; i < results.length; i++) {
       if (results[i].found) {
         return res.send(results[i]);
@@ -324,13 +323,13 @@ app.head(/^\/$/, function(req, res) {
 });
 
 app.get(/^\/$/, function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     res.send(results[0]);
   });
 });
 
 app.get(/./, function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     console.log("UNKNOWN", req.method, req.url, results);
   });
 
@@ -355,9 +354,9 @@ function facet2Arr(facet, type) {
   }
 
   if (type === "histogram") {
-    arr = arr.sort(function(a,b) {return a.key - b.key;});
+    arr = arr.sort((a,b) => {return a.key - b.key;});
   } else {
-    arr = arr.sort(function(a,b) {return b.count - a.count;});
+    arr = arr.sort((a,b) => {return b.count - a.count;});
   }
   return arr;
 }
@@ -424,9 +423,9 @@ function agg2Arr(agg, type) {
   }
 
   if (type === "histogram") {
-    arr = arr.sort(function(a,b) {return a.key - b.key;});
+    arr = arr.sort((a,b) => {return a.key - b.key;});
   } else {
-    arr = arr.sort(function(a,b) {
+    arr = arr.sort((a,b) => {
       if (b.doc_count !== a.doc_count) {
         return b.doc_count - a.doc_count;
       }
@@ -479,7 +478,7 @@ function tagNameToId(node, name, cb) {
     return setImmediate(cb, tags[node].tagName2Id[name]);
   }
 
-  clients[node].get({index: 'tags', type: 'tag', id: name}, function(err, tdata) {
+  clients[node].get({index: 'tags', type: 'tag', id: name}, (err, tdata) => {
     if (!err && (tdata.found)) {
       tags[node].tagName2Id[name] = tdata._source.n;
       tags[node].tagId2Name[tdata._source.n] = name;
@@ -495,7 +494,7 @@ function tagIdToName (node, id, cb) {
   }
 
   var query = {query: {term: {n:id}}};
-  clients[node].search({index: node2Prefix(node) + 'tags', type: 'tag', body: query}, function(err, tdata) {
+  clients[node].search({index: node2Prefix(node) + 'tags', type: 'tag', body: query}, (err, tdata) => {
     if (!err && tdata.hits.hits[0]) {
       tags[node].tagId2Name[id] = tdata.hits.hits[0]._id;
       tags[node].tagName2Id[tdata.hits.hits[0]._id] = id;
@@ -534,9 +533,9 @@ function fixQuery(node, body, doneCb) {
         } else {
           query = {wildcard: {_id: "http:header:" + obj[item].toLowerCase()}};
         }
-        clients[node].search({index: node2Prefix(node) + 'tags', type: 'tag', size:500, _source:["id", "n"], body: {query: query}}, function(err, result) {
+        clients[node].search({index: node2Prefix(node) + 'tags', type: 'tag', size:500, _source:["id", "n"], body: {query: query}}, (err, result) => {
           var terms = [];
-          result.hits.hits.forEach(function (hit) {
+          result.hits.hits.forEach((hit) => {
             terms.push(hit._source.n);
           });
           parent.terms = {};
@@ -549,9 +548,9 @@ function fixQuery(node, body, doneCb) {
       } else if (Array.isArray(obj[item])) {
         outstanding++;
 
-        async.map(obj[item], function(str, cb) {
+        async.map(obj[item], (str, cb) => {
           var tag = (item !== "ta" && str.indexOf("http:header:") !== 0?"http:header:" + str.toLowerCase():str);
-          tagNameToId(node, tag, function (id) {
+          tagNameToId(node, tag, (id) => {
             if (id === null) {
               cb(null, -1);
             } else {
@@ -570,7 +569,7 @@ function fixQuery(node, body, doneCb) {
         outstanding++;
         var tag = (item !== "ta" && obj[item].indexOf("http:header:") !== 0?"http:header:" + obj[item].toLowerCase():obj[item]);
 
-        tagNameToId(node, tag, function (id) {
+        tagNameToId(node, tag, (id) => {
           outstanding--;
           if (id === null) {
             err = "Tag '" + tag + "' not found";
@@ -594,10 +593,10 @@ function fixQuery(node, body, doneCb) {
       } else {
         query = {query: {term: {name: name}}};
       }
-      clients[node].search({index: node2Prefix(node) + 'files', type: 'file', size:500, body: query}, function(err, result) {
+      clients[node].search({index: node2Prefix(node) + 'files', type: 'file', size:500, body: query}, (err, result) => {
         outstanding--;
         obj.bool = {should: []};
-        result.hits.hits.forEach(function (file) {
+        result.hits.hits.forEach((file) => {
           obj.bool.should.push({bool: {must:[{term: {no: file._source.node}}, {term: {fs: file._source.num}}]}});
         });
         if (obj.bool.should.length === 0) {
@@ -632,8 +631,8 @@ function fixResult(node, result, doField, doneCb) {
       return doneCb(null);
     }
 
-    async.map(container[field].terms, function (item, cb) {
-      tagIdToName(node, item.term, function (name) {
+    async.map(container[field].terms, (item, cb) => {
+      tagIdToName(node, item.term, (name) => {
         item.term = name;
         cb(null, item);
       });
@@ -649,8 +648,8 @@ function fixResult(node, result, doField, doneCb) {
       return doneCb(null);
     }
 
-    async.map(container[field].buckets, function (item, cb) {
-      tagIdToName(node, item.key, function (name) {
+    async.map(container[field].buckets, (item, cb) => {
+      tagIdToName(node, item.key, (name) => {
         item.key = name;
         cb(null, item);
       });
@@ -685,7 +684,7 @@ function fixResult(node, result, doField, doneCb) {
         return parallelCb();
       }
       aggTags(result.aggregations, "field", parallelCb);
-    }], function () {
+    }], () => {
       return setImmediate(doneCb);
     });
 }
@@ -720,7 +719,7 @@ function sortResults(search, obj) {
       sortorder[i] = search.sort[i][Object.keys(search.sort[i])[0]].order === "asc"? 1:-1;
     }
 
-    obj.hits.hits = obj.hits.hits.sort(function(a, b) {
+    obj.hits.hits = obj.hits.hits.sort((a, b) => {
       for (var i = 0; i < a.sort.length; i++) {
         if (a.sort[i] === b.sort[i]) {
           continue;
@@ -769,10 +768,10 @@ function newResult(search) {
 app.post("/MULTIPREFIX_tags/tag/_search", function(req, res) {
   var search = JSON.parse(req.body);
 
-  simpleGather(req, res, null, function(err, results) {
-    async.each(results, function (result, asyncCb) {
+  simpleGather(req, res, null, (err, results) => {
+    async.each(results, (result, asyncCb) => {
       fixResult(result._node, result, false, asyncCb);
-    }, function (err) {
+    }, (err) => {
       var tags = {};
       for (var i = 0; i < results.length; i++) {
         if (results[i].error || !results[i].hits) {
@@ -797,7 +796,7 @@ app.post("/MULTIPREFIX_tags/tag/_search", function(req, res) {
 });
 
 app.post("/MULTIPREFIX_fields/field/_search", function(req, res) {
-  simpleGather(req, res, null, function(err, results) {
+  simpleGather(req, res, null, (err, results) => {
     var obj = {
       hits: {
         total: 0,
@@ -836,18 +835,18 @@ app.post("/:index/:type/_search", function(req, res) {
                 search.aggregations.field.terms &&
                 search.aggregations.field.terms.field.match(/^(ta|hh1|hh2)$/);
 
-  async.each(nodes, function (node, asyncCb) {
-    fixQuery(node, req.body, function(err, body) {
+  async.each(nodes, (node, asyncCb) => {
+    fixQuery(node, req.body, (err, body) => {
       //console.log("DEBUG - OUTGOING SEARCH", node, util.inspect(body, false, 50));
       bodies[node] = JSON.stringify(body);
       asyncCb(null);
     });
-  }, function (err) {
-    simpleGather(req, res, bodies, function(err, results) {
-      async.each(results, function (result, asyncCb) {
+  }, (err) => {
+    simpleGather(req, res, bodies, (err, results) => {
+      async.each(results, (result, asyncCb) => {
         //console.log("DEBUG - RESULT", util.inspect(result, false, 50));
         fixResult(result._node, result, doField, asyncCb);
-      }, function (err) {
+      }, (err) => {
         var obj = newResult(search);
 
         for (var i = 0; i < results.length; i++) {
@@ -874,33 +873,33 @@ function msearch(req, res) {
   var lines = req.body.split(/[\r\n]/);
   var bodies = {};
 
-  async.each(nodes, function (node, nodeCb) {
+  async.each(nodes, (node, nodeCb) => {
     var nlines = [];
-    async.eachSeries(lines, function (line, lineCb) {
+    async.eachSeries(lines, (line, lineCb) => {
       if (line === "{}" || line === "") {
         nlines.push("{}");
         return lineCb();
       }
-      fixQuery(node, line, function(err, body) {
+      fixQuery(node, line, (err, body) => {
         nlines.push(JSON.stringify(body));
         lineCb();
       });
-    }, function(err) {
+    }, (err) => {
       bodies[node] = nlines.join("\n");
       var prefix = node2Prefix(node);
       bodies[node] = bodies[node].replace(/MULTIPREFIX_/g, prefix);
       nodeCb();
     });
-  }, function(err) {
+  }, (err) => {
     var responses = [];
-    simpleGather(req, res, bodies, function(err, results) {
-      async.eachSeries(results, function(result, resultCb) {
-        async.eachSeries(result.responses, function(response, responseCb) {
+    simpleGather(req, res, bodies, (err, results) => {
+      async.eachSeries(results, (result, resultCb) => {
+        async.eachSeries(result.responses, (response, responseCb) => {
           fixResult(result._node, response, false, responseCb);
-        }, function(err) {
+        }, (err) => {
           resultCb();
         });
-      }, function(err) {
+      }, (err) => {
         var obj = {responses:[]};
         for (var h = 0; h < results[0].responses.length; h++) {
           obj.responses[h] = newResult(JSON.parse(lines[h*2+1]));
@@ -931,6 +930,8 @@ app.post("/_msearch", msearch);
 
 app.get("/:index/_count", simpleGatherAdd);
 app.post("/:index/_count", simpleGatherAdd);
+app.get("/:index/:type/_count", simpleGatherAdd);
+app.post("/:index/:type/_count", simpleGatherAdd);
 
 
 if (Config.get("regressionTests")) {
@@ -954,7 +955,7 @@ if (nodes.length === 0 || nodes[0] === "") {
   process.exit(1);
 }
 
-nodes.forEach(function(node) {
+nodes.forEach((node) => {
   tags[node] = {tagName2Id: {}, tagId2Name: {}};
 
   clients[node] = new ESC.Client({
@@ -963,7 +964,7 @@ nodes.forEach(function(node) {
     requestTimeout: 300000
   });
 
-  clients[node].info(function(err,data) {
+  clients[node].info((err,data) => {
     if (err) {
       console.log(err);
     }

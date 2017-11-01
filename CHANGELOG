@@ -1,20 +1,44 @@
 NOTICE: 0.20.x will be the last series to support ES 2.
 
 NOTICE: Upgrading from versions prior to 0.18.0 or prior to ES 5 require an
-        outage for for db.pl upgrade see: https://github.com/aol/moloch/wiki/FAQ#How_do_I_upgrade_to_ES_5x
+        outage for db.pl upgrade see: https://github.com/aol/moloch/wiki/FAQ#How_do_I_upgrade_to_ES_5x
 
-NOTICE: Upgrade wiseService before capture
+NOTICE: Restart wiseService before capture when upgrading
 
-NOTICE: 0.20 and above require nodejs 6.x
+NOTICE: 0.20 and above require nodejs 6.x, included in rpm/deb
 
-0.20.0 2017/09/xx
-  - NOTICE: Supported ES Versions: 2.4.x, 5.1.2, 5.2.x, > 5.3.1, 5.4.x, 5.5.x
+0.20.1 2017/11/xx
+  - NOTICE: Supported ES Versions: 2.4.x, 5.1.2, 5.2.x, > 5.3.1, 5.4.x, 5.5.x, 5.6.x
+  - viewer - graph hover now respects timezone setting (issue #757)
+
+0.20.0 2017/10/31
+  - NOTICE: Supported ES Versions: 2.4.x, 5.1.2, 5.2.x, > 5.3.1, 5.4.x, 5.5.x, 5.6.x
+  - NOTICE: db.pl upgrade is required
   - capture - added --packetcnt from @jmd1212
   - capture - handle monitor directory being empty
   - capture - basic fbzero parser as quic
+  - capture - pjl, dcerpc detection
+  - release - on ubuntu, plugins weren't loading dependencies correctly
+  - viewer - made number of packets displayed setting accurate
+  - release - move node install from release to easybutton (issue #720)
+  - release - install ES 5
+  - capture - initial SMTP BDAT support
+  - viewer - initial history support
+  - capture - new advanced setting maxMemPercentage that will abort capture if reached
+  - capture - basic rip, nzsql detection
+  - capture - improved quic, mysql detection
+  - capture - plugins can now replace how SPI data is sent to ES
+  - viewer - fixed right client menu not working (issue #740)
+  - viewer - add/remove tags update tag count (PR #756)
+  - viewer - support sessions resize better
+  - release - use screwdriver to build and test
+  - release - upgrade node version
+  - viewer - fix EXISTS! being reformatted (issue #747)
+  - viewer - Don't allow * by itself in expressions anymore, must use EXISTS!
+  - viewer - removed babel, newer browsers required
 
 0.19.2 2017/08/25
-  - NOTICE: Supported ES Versions: 2.4.x, 5.1.2, 5.2.x, > 5.3.1, 5.4.x, 5.5.x
+  - NOTICE: Supported ES Versions: 2.4.x, 5.1.2, 5.2.x, > 5.3.1, 5.4.x, 5.5.x, 5.6.x
   - NOTICE: Requires wiseService upgrade if using wise
   - capture - ja3 support (https://github.com/salesforce/ja3/) (issue #706)
   - viewer - spi view column sets (issue #713)
@@ -149,6 +173,7 @@ NOTICE: 0.20 and above require nodejs 6.x
   - capture - tpacketv3 handles multiple interfaces correctly (issue #658)
   - easybutton - singlehost and config removed, build remains for now
                  make install & make config should work
+  - capture - 
 
 0.17.1 2017/01/30
   - NOTICE: ES 2.4 or ES 5.1.2 required (ES 5.x isn't recommended for production yet)

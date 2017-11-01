@@ -2,11 +2,17 @@
 
   'use strict';
 
-  let customCols = require('json!../session/components/custom.columns.json');
+  let customCols = require('../session/components/custom.columns.json');
 
   let bodyElem = $(document.body);
 
   let interval;
+
+  const defaultSpiviewConfig = { fields: ['a2','prot-term','a1'] };
+  const defaultColConfig = {
+    order   : [['fp', 'asc']],
+    columns : ['fp','lp','src','p1','dst','p2','pa','dbby','no','info']
+  };
 
   /**
    * @class SettingsController
@@ -50,11 +56,15 @@
 
       this.visibleTab = 'general'; // default tab
 
+      this.defaultColConfig = defaultColConfig;
+      this.defaultSpiviewConfig = defaultSpiviewConfig;
+
       // does the url specify a tab in hash
       let tab = this.$location.hash();
       if (tab) { // if there is a tab specified and it's a valid tab
         if (tab === 'general' || tab === 'views' || tab === 'cron' ||
-            tab === 'col' || tab === 'theme' || tab === 'password') {
+            tab === 'col' || tab === 'theme' || tab === 'password' ||
+            tab === 'spiview') {
           this.visibleTab = tab;
         }
       }
@@ -74,6 +84,7 @@
 
       this.UserService.getCurrent()
         .then((response) => {
+          this.displayName = response.userId;
           // only admins can edit other users' settings
           if (response.createEnabled && this.$routeParams.userId) {
             if (response.userId === this.$routeParams.userId) {
@@ -81,6 +92,7 @@
               this.$location.search('userId', null);
             } else { // admin editing another user
               this.userId = this.$routeParams.userId;
+              this.displayName = this.$routeParams.userId;
             }
           } else { // normal user has no permission, so remove the routeParam
             // (even if it's their own userId because it's unnecessary)
@@ -95,6 +107,7 @@
           this.getViews();
           this.getCronQueries();
           this.getColConfigs();
+          this.getSpiviewConfigs();
         })
         .catch((error) => {
           this.error    = error.text;
@@ -201,6 +214,49 @@
           this.colConfigError = error.text;
         });
     }
+
+    /* retrieves the specified user's custom spiview fields configurations.
+     * dissects the visible spiview fields for view consumption */
+    getSpiviewConfigs() {
+      this.UserService.getSpiviewFields(this.userId)
+         .then((response) => {
+           this.spiviewConfigs = response;
+
+           for (let x = 0, xlen = this.spiviewConfigs.length; x < xlen; ++x) {
+             let config = this.spiviewConfigs[x];
+             let spiParamsArray = config.fields.split(',');
+
+             // get each field from the spi query parameter and issue
+             // a query for one field at a time
+             for (let i = 0, len = spiParamsArray.length; i < len; ++i) {
+               let param = spiParamsArray[i];
+               let split = param.split(':');
+               let fieldID = split[0];
+               let count = split[1];
+
+               let field;
+
+               for (let key in this.fields) {
+                 if (this.fields[key].dbField === fieldID) {
+                   field = this.fields[key];
+                   break;
+                 }
+               }
+
+               if (field) {
+                 if (!config.fieldObjs) { config.fieldObjs = []; }
+
+                 field.count = count;
+                 config.fieldObjs.push(field);
+               }
+             }
+           }
+         })
+         .catch((error) => {
+           this.spiviewConfigError = error.text;
+         });
+    }
+
 
 
     /* page functions ------------------------------------------------------ */
@@ -674,6 +730,28 @@
     }
 
 
+    /* SPIVIEW FIELD CONFIGURATIONS ----------------------------------------- */
+    /**
+     * Deletes a previously saved custom spiview field configuration
+     * @param {string} name The name of the field config to remove
+     * @param {int} index   The index in the array of the field config to remove
+     */
+    deleteSpiviewConfig(name, index) {
+      this.UserService.deleteSpiviewFieldConfig(name, this.userId)
+         .then((response) => {
+           this.spiviewConfigs.splice(index, 1);
+           // display success message to user
+           this.msg = response.text;
+           this.msgType = 'success';
+         })
+         .catch((error) => {
+           // display error message to user
+           this.msg = error.text;
+           this.msgType = 'danger';
+         });
+    }
+
+
     /* PASSWORD ------------------------------------------------------------ */
     /* changes the user's password given the current password, the new password,
      * and confirmation of the new password */
@@ -730,7 +808,7 @@
    */
   angular.module('moloch')
      .component('molochSettings', {
-       template  : require('html!./settings.html'),
+       template  : require('./settings.html'),
        controller: SettingsController
      });
 

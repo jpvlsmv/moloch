@@ -26,7 +26,7 @@
 #include "patricia.h"
 #include "GeoIP.h"
 
-#define MOLOCH_MIN_DB_VERSION 29
+#define MOLOCH_MIN_DB_VERSION 34
 
 extern uint64_t         totalPackets;
 extern uint64_t         totalBytes;
@@ -300,6 +300,17 @@ void moloch_db_geo_lookup4(MolochSession_t *session, uint32_t addr, char **g, ch
     }
 }
 /******************************************************************************/
+LOCAL void moloch_db_send_bulk(char *json, int len)
+{
+    moloch_http_set(esServer, "/_bulk", 6, json, len, NULL, NULL);
+}
+LOCAL MolochDbSendBulkFunc sendBulkFunc = moloch_db_send_bulk;
+/******************************************************************************/
+void moloch_db_set_send_bulk(MolochDbSendBulkFunc func)
+{
+    sendBulkFunc = func;
+}
+/******************************************************************************/
 LOCAL struct {
     char   *json;
     BSB     bsb;
@@ -315,8 +326,6 @@ void moloch_db_save_session(MolochSession_t *session, int final)
 {
     uint32_t               i;
     char                   id[100];
-    char                   key[100];
-    int                    key_len;
     uuid_t                 uuid;
     MolochString_t        *hstring;
     MolochInt_t           *hint;
@@ -395,8 +404,6 @@ void moloch_db_save_session(MolochSession_t *session, int final)
         else if (id[i] == '/') id[i] = '_';
     }
 
-    key_len = snprintf(key, sizeof(key), "/_bulk");
-
     struct timeval currentTime;
     gettimeofday(&currentTime, NULL);
 
@@ -404,7 +411,7 @@ void moloch_db_save_session(MolochSession_t *session, int final)
     /* If no room left to add, send the buffer */
     if (dbInfo[thread].json && (uint32_t)BSB_REMAINING(dbInfo[thread].bsb) < jsonSize) {
         if (BSB_LENGTH(dbInfo[thread].bsb) > 0) {
-            moloch_http_set(esServer, key, key_len, dbInfo[thread].json, BSB_LENGTH(dbInfo[thread].bsb), NULL, NULL);
+            sendBulkFunc(dbInfo[thread].json, BSB_LENGTH(dbInfo[thread].bsb));
         } else {
             moloch_http_free_buffer(dbInfo[thread].json);
         }
@@ -1184,7 +1191,7 @@ uint64_t moloch_db_memory_max()
 }
 
 /******************************************************************************/
-void moloch_db_update_stats(int n)
+void moloch_db_update_stats(int n, gboolean sync)
 {
     static uint64_t       lastPackets[NUMBER_OF_STATS];
     static uint64_t       lastBytes[NUMBER_OF_STATS];
@@ -1244,6 +1251,13 @@ void moloch_db_update_stats(int n)
     uint64_t mem = moloch_db_memory_size();
     double   memMax = moloch_db_memory_max();
     float    memUse = mem/memMax*100.0;
+
+    if (memUse > config.maxMemPercentage) {
+        LOG("Aborting, max memory percentage reached: %.2f > %d", memUse, config.maxMemPercentage);
+        fflush(stdout);
+        fflush(stderr);
+        kill(getpid(), SIGSEGV);
+    }
 
     int json_len = snprintf(json, MOLOCH_HTTP_BUFFER_SIZE,
         "{"
@@ -1326,7 +1340,10 @@ void moloch_db_update_stats(int n)
     lastUsage[n]           = usage;
 
     if (n == 0) {
-        moloch_http_set(esServer, stats_key, stats_key_len, json, json_len, NULL, NULL);
+        if (sync)
+            moloch_http_send_sync(esServer, "POST", stats_key, stats_key_len, json, json_len, NULL, NULL);
+        else
+            moloch_http_set(esServer, stats_key, stats_key_len, json, json_len, NULL, NULL);
     } else {
         key_len = snprintf(key, sizeof(key), "/%sdstats/dstat/%s-%d-%d", config.prefix, config.nodeName, (int)(currentTime.tv_sec/intervals[n])%1440, intervals[n]);
         moloch_http_set(esServer, key, key_len, json, json_len, NULL, NULL);
@@ -1335,7 +1352,7 @@ void moloch_db_update_stats(int n)
 /******************************************************************************/
 gboolean moloch_db_update_stats_gfunc (gpointer user_data)
 {
-    moloch_db_update_stats((long)user_data);
+    moloch_db_update_stats((long)user_data, 0);
 
     return TRUE;
 }
@@ -1360,7 +1377,7 @@ gboolean moloch_db_flush_gfunc (gpointer user_data )
             dbInfo[thread].lastSave = currentTime.tv_sec;
             MOLOCH_UNLOCK(dbInfo[thread].lock);
             // Unlock and then send buffer
-            moloch_http_set(esServer, "/_bulk", 6, json, len, NULL, NULL);
+            sendBulkFunc(json, len);
         } else {
             MOLOCH_UNLOCK(dbInfo[thread].lock);
         }
@@ -2350,7 +2367,7 @@ void moloch_db_exit()
         }
 
         moloch_db_flush_gfunc((gpointer)1);
-        moloch_db_update_stats(TRUE);
+        moloch_db_update_stats(0, 1);
         moloch_http_free_server(esServer);
     }
 

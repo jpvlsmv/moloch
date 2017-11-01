@@ -14,7 +14,7 @@
     visibleHeaders: ['fp','lp','src','p1','dst','p2','pa','dbby','no','info']
   };
 
-  let customCols = require('json!./custom.columns.json');
+  let customCols = require('./custom.columns.json');
 
   let componentInitialized = false, colResizeInitialized = false;
   let holdingClick = false, timeout;
@@ -68,6 +68,8 @@
       this.query          = _query; // load saved query
       this.stickySessions = [];     // array of open sessions
 
+      this.getColumnWidths();
+
       this.getTableState(); // IMPORTANT: kicks off the initial search query!
 
       this.getCustomColumnConfigurations();
@@ -90,7 +92,7 @@
 
           this.currentPage = args.currentPage;
 
-          this.getData();
+          this.getData(true);
         }
       });
 
@@ -110,6 +112,7 @@
 
         _query.expression = this.query.expression = args.expression;
         if (args.bounding) {_query.bounding = this.query.bounding = args.bounding;}
+        if (args.interval) {_query.interval = this.query.interval = args.interval;}
 
         // reset to the first page, because we are issuing a new query
         // and there may only be 1 page of results
@@ -120,7 +123,7 @@
         // don't issue search when the first change:search event is fired
         if (!componentInitialized || this.loading) { return; }
 
-        this.getData();
+        this.getData(true);
       });
 
       // watch for additions to search parameters from session detail or map
@@ -144,6 +147,7 @@
           this.mapHeadersToFields();
         }, 300);
       };
+      this.$window.addEventListener('resize', windowResizeEvent);
     } /* /$onInit */
 
     /* fired when controller's containing scope is destroyed */
@@ -174,7 +178,9 @@
             if (header) {
               header.width = column.w;
               this.colWidths[header.dbField] = column.w;
-              localStorage['session-column-widths'] = JSON.stringify(this.colWidths);
+
+              this.saveColumnWidths();
+
               this.mapHeadersToFields();
             }
           });
@@ -234,8 +240,8 @@
           if (!colResizeInitialized) { this.initializeColResizable(); }
         })
         .catch((error) => {
-          this.error    = error;
-          this.loading  = false;
+          this.error = error;
+          this.reloadTable(); // sets loading to false
         });
     }
 
@@ -272,7 +278,8 @@
       this.SessionService.getState('sessionsNew')
          .then((response) => {
            this.tableState = response.data;
-           if (Object.keys(this.tableState).length === 0) {
+           if (Object.keys(this.tableState).length === 0 ||
+              !this.tableState.visibleHeaders || !this.tableState.order) {
              this.tableState = defaultTableState;
            } else if (this.tableState.visibleHeaders[0] === '') {
              this.tableState.visibleHeaders.shift();
@@ -282,14 +289,29 @@
            this.query.sorts = this.tableState.order;
 
            this.FieldService.get()
-              .then((result) => {
-                this.fields = result;
+             .then((result) => {
+               this.fields = result;
 
-                this.setupFields();
+               this.setupFields();
 
-                this.getUserSettings();
-              }).catch((error) => { this.error = error; });
-         }).catch((error) => { this.error = error; });
+               this.getUserSettings(); // IMPORTANT: kicks off the initial search query!
+             }).catch((error) => {
+               this.loading  = false;
+               this.error    = error;
+             });
+         }).catch((error) => {
+           this.loading  = false;
+           this.error    = error;
+         });
+    }
+
+    /* Gets the column widths of the table if they exist */
+    getColumnWidths() {
+      this.SessionService.getState('sessionsColWidths')
+        .then((response) => {
+          this.colWidths = response.data || {};
+        })
+        .catch(() => { this.colWidths = {}; });
     }
 
     /* Gets the current user's custom column configurations */
@@ -316,6 +338,14 @@
     }
 
     /**
+     * Saves the column widths to the db
+     */
+    saveColumnWidths() {
+      this.SessionService.saveState(this.colWidths, 'sessionsColWidths')
+         .catch((error) => { this.error = error; });
+    }
+
+    /**
      * Finds a field object given its id
      * @param {string} fieldId  The unique id of the field
      * @return {Object} field   The field object
@@ -338,12 +368,9 @@
      */
     mapHeadersToFields() {
       this.headers = [];
-      this.colWidths = {};
       this.sumOfColWidths = 80;
 
-      if (localStorage['session-column-widths']) {
-        this.colWidths = JSON.parse(localStorage['session-column-widths']);
-      }
+      if (!this.colWidths) { this.colWidths = {}; }
 
       for (let i = 0, len = this.tableState.visibleHeaders.length; i < len; ++i) {
         let headerId  = this.tableState.visibleHeaders[i];
@@ -362,7 +389,10 @@
         }
       }
 
+      this.sumOfColWidths = Math.round(this.sumOfColWidths);
+
       this.calculateInfoColumnWidth(defaultInfoColWidth);
+      this.$scope.$broadcast('$$rebind::refreshHeaders');
     }
 
     /**
@@ -371,11 +401,10 @@
      * @param infoColWidth
      */
     calculateInfoColumnWidth(infoColWidth) {
+      this.showFitButton = false;
       if (!this.colWidths) { return; }
+      let windowWidth = window.innerWidth - 45; // account for right and left margins
       if (this.tableState.visibleHeaders.indexOf('info') >= 0) {
-        // register listener to update info column width on window resize
-        this.$window.addEventListener('resize', windowResizeEvent);
-        let windowWidth  = window.innerWidth - 45; // account for right and left margins
         let fillWithInfoCol = windowWidth - this.sumOfColWidths;
         let newTableWidth = this.sumOfColWidths;
         for (let i = 0, len = this.headers.length; i < len; ++i) {
@@ -388,8 +417,11 @@
         this.tableWidth = newTableWidth;
       } else {
         this.tableWidth = this.sumOfColWidths;
-        // there is no info column, so no need to watch for window resize
-        this.$window.removeEventListener('resize', windowResizeEvent);
+        // display a button to fit the table to the width of the window
+        // if the table is more than 10 pixels larger or smaller than the window
+        if (Math.abs(this.tableWidth - windowWidth) > 10) {
+          this.showFitButton = true;
+        }
       }
     }
 
@@ -437,12 +469,12 @@
 
       this.loading      = true;
       this.showSessions = false;
-      this.$scope.$broadcast('$$rebind::refresh');
+      this.$scope.$broadcast('$$rebind::refreshTable');
 
       this.$timeout(() => {
         this.loading      = false;
         this.showSessions = true;
-        this.$scope.$broadcast('$$rebind::refresh');
+        this.$scope.$broadcast('$$rebind::refreshTable');
 
         this.initializeColResizable();
       });
@@ -540,7 +572,7 @@
 
       this.saveTableState();
 
-      this.getData();
+      this.getData(true);
     }
 
     /**
@@ -701,11 +733,10 @@
         this.tableState.visibleHeaders.push(id);
       }
 
+      this.mapHeadersToFields();
+
       if (reloadData) { this.getData(true); } // need data from the server (reloads table)
-      else {
-        this.mapHeadersToFields();
-        this.reloadTable();
-      }
+      else { this.reloadTable(); } // have all the data, just need to reload the table
 
       this.saveTableState(true);
     }
@@ -731,13 +762,13 @@
         this.tableState.order           = this.colConfigs[index].order.slice();
       }
 
-      this.reloadTable();
+      this.mapHeadersToFields();
 
       this.query.sorts = this.tableState.order;
 
       this.saveTableState();
 
-      this.getData();
+      this.getData(true);
     }
 
     /* Saves a custom column configuration */
@@ -819,6 +850,31 @@
       this.SessionService.openSpiGraph(fieldID);
     }
 
+    /* Fits the table to the width of the current window size */
+    fitTable() {
+      // disable resizable columns so it can be initialized after columns are resized
+      $('#sessionsTable').colResizable({ disable:true });
+      colResizeInitialized = false;
+
+      let windowWidth   = window.innerWidth - 45; // account for right and left margins
+      let leftoverWidth = windowWidth - this.sumOfColWidths;
+      let percentChange = 1 + (leftoverWidth/this.sumOfColWidths);
+
+      for (let i = 0, len = this.headers.length; i < len; ++i) {
+        let header    = this.headers[i];
+        let newWidth  = Math.floor(header.width * percentChange);
+        header.width  = newWidth;
+        this.colWidths[header.dbField] = newWidth;
+      }
+
+      this.tableWidth = windowWidth;
+      this.showFitButton = false;
+
+      this.saveColumnWidths();
+      
+      this.$timeout(() => { this.initializeColResizable(); });
+    }
+
 
     /* UNIQUE VALUES */
     /**
@@ -849,7 +905,7 @@
 
   angular.module('moloch')
     .component('session', {
-      template  : require('html!../templates/session.list.html'),
+      template  : require('../templates/session.list.html'),
       controller: SessionListController
     });
 

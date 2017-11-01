@@ -2,13 +2,13 @@
 /* Cache implementations
  *
  * Copyright 2012-2016 AOL Inc. All rights reserved.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this Software except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,11 +27,10 @@ var LRU = require('lru-cache')
 /******************************************************************************/
 // Memory Cache
 /******************************************************************************/
- 
+
 function WISEMemoryCache (options) {
   var cacheSize =  +options.cacheSize || 100000;
-  var self = this;
-  self.cache = [LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize})];
+  this.cache = [LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize})];
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -50,36 +49,33 @@ exports.WISEMemoryCache = WISEMemoryCache;
 /******************************************************************************/
 // Redis Cache
 /******************************************************************************/
- 
+
 function WISERedisCache (options) {
   options = options || {};
   var cacheSize =  +options.cacheSize || 10000;
-  var self = this;
-  self.cache = [LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize})];
+  this.cache = [LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize}), LRU({max: cacheSize})];
 
   options.return_buffers = true; // force buffers on for the bson decoding to work
-  self.client = redis.createClient(options);
+  this.client = redis.createClient(options);
 }
 
 //////////////////////////////////////////////////////////////////////////////////
 WISERedisCache.prototype.get = function(query, cb) {
-  var self = this;
-
   // Check memory cache first
-  var value = self.cache[query.type].get(query.value);
+  var value = this.cache[query.type].get(query.value);
   if (value !== undefined) {
     return cb(null, value);
   }
 
   // Check redis
-  self.client.get("" + query.type + "-" + query.value, function(err, reply) {
+  this.client.get("" + query.type + "-" + query.value, (err, reply) => {
     if (reply === null) {
       return cb(null, undefined);
     }
     value = BSON.deserialize(reply, {promoteBuffers: true});
     cb(null, value);
 
-    self.cache[query.type].set(query.value, value); // Set memory cache
+    this.cache[query.type].set(query.value, value); // Set memory cache
   });
 };
 

@@ -59,7 +59,7 @@
         </li>
         <li role="presentation">
           <a href="#spiview">
-            <span class="fa fa-fw fa-eye"></span>&nbsp;
+            <span class="fa fa-fw fa-eyedropper"></span>&nbsp;
             SPI View
           </a>
         </li>
@@ -85,6 +85,12 @@
           <a href="#stats">
             <span class="fa fa-fw fa-line-chart"></span>&nbsp;
             Stats
+          </a>
+        </li>
+        <li role="presentation">
+          <a href="#history">
+            <span class="fa fa-fw fa-history"></span>&nbsp;
+            History
           </a>
         </li>
         <li role="presentation">
@@ -382,7 +388,7 @@
       <hr>
 
       <h3 id="spiview">
-        <span class="fa fa-fw fa-eye"></span>&nbsp;
+        <span class="fa fa-fw fa-eyedropper"></span>&nbsp;
         SPI View
       </h3>
       <p>
@@ -440,6 +446,63 @@
       </p>
       <p>
         Packets/Sec, Bytes/Sec, Bits/Sec, Sessions/Sec, Input Dropped/Sec, Active Sessions, Active TCP Sessions, Active UDP Sessions, Active ICMP Sessions, Free Space (MB), Free Space (%), Memory, Memory (%), CPU, Disk Queue, ES Queue, ES Dropped/Sec, Packet Queue, Closing Queue, Waiting Queue, Fragments Queue, Active Fragments, Framents Dropped/Sec, Overload Dropped/Sec, Total Dropped/Sec.
+      </p>
+
+      <hr>
+
+      <h3 id="history">
+        <span class="fa fa-fw fa-history"></span>&nbsp;
+        History
+      </h3>
+      <p>
+        The History tab provides the ability to view Moloch actions/queries to
+        ES. It is usable both as a history for a user and for auditing abilities
+        for an admin. A non-admin user can only view their own actions. An admin
+        user can view all users' actions.
+      </p>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa-search"></span>&nbsp;
+        Use the search input at the top of the page to search for specific history items.
+        <br>
+        <em style="margin-left:2.75rem;">
+          Check out the ES
+          <a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-query-string-query.html#query-string-syntax">
+            query string syntax</a>
+          for more information about how to query the history table.
+        </em>
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa fa-clock-o"></span>&nbsp;
+        Filter history by a time range by utilizing the time controls under the search bar.
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa fa-sort"></span>&nbsp;
+        Sort history by clicking any column header.
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa-filter"></span>&nbsp;
+        Use the filter button to filter history by specific field values.
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa-check-square"></span>&nbsp;
+        Use the checkboxes within column headers to display history items that
+        always have a value for that field.
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa-plus"></span>&nbsp;
+        Use the expand button to display more information about a history item.
+      </div>
+      <div class="margined-left-xxxxlg">
+        <span class="fa fa-fw fa-folder-open"></span>&nbsp;
+        Use the open button to "go to" the history item. This will open the page
+        that the action/query was issued from.
+        <br>
+        <em style="margin-left:2.5rem;">
+          &nbsp;This is only available for the main GET requests from a page
+          within the application.
+        </em>
+      </div>
+
       <hr>
 
       <h3 id="settings">
