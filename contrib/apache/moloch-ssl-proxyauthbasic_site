@@ -1,0 +1,35 @@
+# Configuration block to use Apache to proxy moloch traffic via https
+# Authentication is done by the proxy against /data/moloch/etc/.htpasswd
+# Create that with htpasswd -c /data/moloch/etc/.htpasswd proxyadmin
+# Set viewhostname and go to https://${viewhostname}/sessions
+# When prompted for "Moloch Proxy", proxyadmin/THEPASSWORD should work.
+
+Define viewhostname moloch-ssl-viewer
+
+<IfModule mod_ssl.c>
+
+<VirtualHost *:443>
+    ServerName ${viewhostname}
+    SSLProxyEngine On
+
+    <Location />
+        AuthType Basic
+        AuthName "Moloch Proxy"
+        AuthUserFile "/data/moloch/etc/.htpasswd"
+        Require valid-user
+        RequestHeader set X-Proxy-Authenticated-User %{REMOTE_USER}e
+
+        ProxyPass http://localhost:8005/
+        ProxyPassReverse http://localhost:8005/
+    </Location>
+</VirtualHost>
+
+</IfModule>
+
+# Config.ini stanza:
+# [moloch-ssl-viewer]
+# userNameHeader=x-proxy-authenticated-user
+# webBasePath = /
+# viewPort = 8005
+# viewHost = localhost
+# viewUrl  = https://${viewhostname}/

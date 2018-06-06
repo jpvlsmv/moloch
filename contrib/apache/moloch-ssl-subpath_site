@@ -1,0 +1,18 @@
+# Configuration block to use Apache to proxy moloch traffic via https
+# Authentication is passed through.
+# go to https://YOURWEBSERVERNAME/moloch/sessions
+# When prompted for "Moloch Basic", admin/THEPASSWORD should work
+
+<Location /moloch/>
+    SetEnv proxy-chain-auth On
+    ProxyPass http://localhost:8005/moloch/
+    ProxyPassReverse http://localhost:8005/moloch/
+</Location>
+
+# Suitable config.ini stanza:
+# [moloch-ssl-viewer]
+# httpRealm = Moloch Basic
+# webBasePath = /moloch/
+# viewPort = 8005
+# viewHost = localhost
+# viewUrl  = https://YOURWEBSERVERNAME/moloch/
