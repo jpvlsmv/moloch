@@ -1,0 +1,40 @@
+# Configuration block to use Apache to proxy moloch traffic via https
+# Authentication is via OpenIDC, but a user matching the id_token "sub" must
+# exist in the Moloch users index, with Web Auth Header checked.
+
+# Configuring the OpenID-connect module
+OIDCProviderMetadataURL https://accounts.google.com/.well-known/openid-configuration
+OIDCClientID <your-client-id-administered-through-the-google-api-console>
+OIDCClientSecret <your-client-secret-administered-through-the-google-api-console>
+OIDCRedirectURI https://***your_redirect_name***/example/redirect_uri
+OIDCCryptoPassphrase <password>
+
+# Configuration for the proxy
+<Location /moloch/>
+    AuthType openid-connect
+    Require valid-user
+
+    RequestHeader set X-Proxy-Authenticated-User %{OIDC_CLAIM_sub}e
+    # Create users in moloch:
+    # node addUser.js OpenIDC-subject "Bob Jones" makeupareallylongpassword [--admin]
+
+    ### As another example, the Jones family watches over their network
+    # Require claim family_name: Jones
+    # RequestHeader set X-Proxy-Authenticated-User %{OIDC_CLAIM_given_name}e
+    # node addUser.js Alice "Alice Jones" makeupareallylongpassword
+    # node addUser.js Bob "Bob Jones" makeupareallylongpassword
+    # 
+    # Note: Charlie.Jones@gmail.com can authenticate, but will not see 
+    # anything in Moloch, since the moloch User "Charlie" does not exist.
+
+    ProxyPass http://localhost:8005/moloch/
+    ProxyPassReverse http://localhost:8005/moloch/
+</Location>
+
+# Suitable config.ini stanza:
+# [moloch-ssl-viewer]
+# userNameHeader x-proxy-authenticated-user
+# webBasePath = /moloch/
+# viewPort = 8005
+# viewHost = localhost
+# viewUrl  = https://YOURWEBSERVERNAME/moloch/
