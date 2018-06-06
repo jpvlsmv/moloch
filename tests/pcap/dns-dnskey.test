@@ -1,116 +1,113 @@
 {
-   "sessions" : [
+   "sessions2" : [
       {
-         "header" : {
-            "index" : {
-               "_type" : "session",
-               "_index" : "tests_sessions-140226"
-            }
-         },
          "body" : {
-            "mac1-term-cnt" : 1,
-            "db2" : 0,
-            "ta" : [
-               "srcip"
-            ],
-            "ipSrc" : "10.0.0.1",
-            "dnshocnt" : 1,
-            "firstPacket" : 1393428477365,
-            "g2" : "USA",
-            "fp" : 1393428477,
-            "by2" : 0,
-            "mac1-term" : [
-               "00:1a:e3:dc:2e:c0"
-            ],
-            "by" : 74,
-            "ss" : 1,
-            "fs" : [],
-            "pa1" : 1,
-            "a1" : "10.0.0.1",
-            "as2" : "AS15169 Google Inc.",
-            "fb1" : "f376011000010000",
-            "lpd" : 1393428477365,
-            "mac2-term" : [
+            "dns" : {
+               "host" : [
+                  "<root>"
+               ],
+               "hostCnt" : 1,
+               "opcode" : [
+                  "QUERY"
+               ],
+               "opcodeCnt" : 1,
+               "qc" : [
+                  "IN"
+               ],
+               "qcCnt" : 1,
+               "qt" : [
+                  "DNSKEY"
+               ],
+               "qtCnt" : 1
+            },
+            "dstASN" : "AS15169 Google LLC",
+            "dstBytes" : 0,
+            "dstDataBytes" : 0,
+            "dstGEO" : "US",
+            "dstIp" : "8.8.8.8",
+            "dstMac" : [
                "00:19:e2:ba:2f:c1"
             ],
-            "timestamp" : "SET",
+            "dstMacCnt" : 1,
+            "dstOui" : [
+               "Juniper Networks"
+            ],
+            "dstOuiCnt" : 1,
+            "dstPackets" : 0,
+            "dstPort" : 53,
+            "dstRIR" : "ARIN",
+            "fileId" : [],
+            "firstPacket" : 1393428477365,
+            "ipProtocol" : 17,
             "lastPacket" : 1393428477365,
-            "pr" : 17,
-            "sl" : 0,
-            "a2" : "8.8.8.8",
-            "ps" : [
+            "length" : 0,
+            "node" : "test",
+            "packetLen" : [
+               90
+            ],
+            "packetPos" : [
                24
             ],
-            "vlan" : [
-               500
-            ],
-            "no" : "test",
-            "portDst" : 53,
-            "rir2" : "ARIN",
-            "prot-term" : [
+            "protocol" : [
                "udp",
                "dns"
             ],
+            "protocolCnt" : 2,
+            "segmentCnt" : 1,
+            "srcASN" : "AS0000 This is neat",
+            "srcBytes" : 74,
+            "srcDataBytes" : 66,
+            "srcGEO" : "RU",
+            "srcIp" : "10.0.0.1",
+            "srcMac" : [
+               "00:1a:e3:dc:2e:c0"
+            ],
+            "srcMacCnt" : 1,
+            "srcOui" : [
+               "Cisco Systems, Inc"
+            ],
+            "srcOuiCnt" : 1,
+            "srcPackets" : 1,
+            "srcPayload8" : "f376011000010000",
+            "srcPort" : 53869,
+            "tags" : [
+               "srcip"
+            ],
+            "tagsCnt" : 1,
             "test" : {
+               "ASN" : [
+                  "AS0000 This is neat"
+               ],
+               "GEO" : [
+                  "RU"
+               ],
+               "RIR" : [
+                  ""
+               ],
+               "ip" : [
+                  "10.0.0.1"
+               ],
                "number" : [
                   134744072
                ],
-               "ip" : [
-                  167772161
-               ],
-               "ip-geo" : [
-                  "RUS"
-               ],
-               "string" : [
+               "string.snow" : [
                   "16777226:53869,134744072:53"
-               ],
-               "ip-asn" : [
-                  "AS0000 This is neat"
-               ],
-               "ip-rir" : [
-                  ""
                ]
             },
-            "tags-term" : [
-               "srcip"
+            "timestamp" : "SET",
+            "totBytes" : 74,
+            "totDataBytes" : 66,
+            "totPackets" : 1,
+            "vlan" : [
+               500
             ],
-            "p1" : 53869,
-            "pa" : 1,
-            "pa2" : 0,
-            "prot-term-cnt" : 2,
-            "mac2-term-cnt" : 1,
-            "vlan-cnt" : 1,
-            "dns" : {
-               "opcode-term" : [
-                  "QUERY"
-               ],
-               "qc-term" : [
-                  "IN"
-               ],
-               "opcode-term-cnt" : 1,
-               "qt-term" : [
-                  "DNSKEY"
-               ],
-               "qt-term-cnt" : 1,
-               "qc-term-cnt" : 1
-            },
-            "db" : 66,
-            "as1" : "AS0000 This is neat",
-            "psl" : [
-               90
-            ],
-            "g1" : "RUS",
-            "db1" : 66,
-            "fpd" : 1393428477365,
-            "ipDst" : "8.8.8.8",
-            "by1" : 74,
-            "dnsho" : [
-               "<root>"
-            ],
-            "tacnt" : 1,
-            "p2" : 53,
-            "lp" : 1393428477,
-            "portSrc" : 53869
+            "vlanCnt" : 1
+         },
+         "header" : {
+            "index" : {
+               "_index" : "tests_sessions2-140226",
+               "_type" : "session"
+            }
          }
       }
    ]

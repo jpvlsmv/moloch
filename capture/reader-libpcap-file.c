@@ -33,21 +33,30 @@ extern void                 *esServer;
 LOCAL  MolochStringHead_t    monitorQ;
 
 LOCAL  char                  offlinePcapFilename[PATH_MAX+1];
-LOCAL  char                 *offlinePcapName;
 LOCAL  int                   pktsToRead;
 
-void reader_libpcapfile_opened();
+LOCAL void reader_libpcapfile_opened();
 
 LOCAL MolochPacketBatch_t   batch;
+LOCAL uint8_t               readerPos;
+extern char                *readerFileName[256];
+extern MolochFieldOps_t     readerFieldOps[256];
+
+LOCAL struct {
+    GRegex    *regex;
+    int        field;
+    char      *expand;
+} filenameOps[100];
+LOCAL int                   filenameOpsNum;
 
 #ifdef HAVE_SYS_INOTIFY_H
 #include <sys/inotify.h>
 LOCAL int         monitorFd;
 LOCAL GHashTable *wdHashTable;
 
-void reader_libpcapfile_monitor_dir(char *dirname);
+LOCAL void reader_libpcapfile_monitor_dir(char *dirname);
 
-void reader_libpcapfile_monitor_do(struct inotify_event *event)
+LOCAL void reader_libpcapfile_monitor_do(struct inotify_event *event)
 {
     gchar *dirname = g_hash_table_lookup(wdHashTable, (void *)(long)event->wd);
     gchar *fullfilename = g_build_filename (dirname, event->name, NULL);
@@ -80,7 +89,7 @@ void reader_libpcapfile_monitor_do(struct inotify_event *event)
     return;
 }
 /******************************************************************************/
-gboolean reader_libpcapfile_monitor_read()
+LOCAL gboolean reader_libpcapfile_monitor_read()
 {
     char buf[20 * (sizeof(struct inotify_event) + NAME_MAX + 1)] __attribute__ ((aligned(8)));
     struct inotify_event *event;
@@ -101,7 +110,7 @@ gboolean reader_libpcapfile_monitor_read()
     return TRUE;
 }
 /******************************************************************************/
-void reader_libpcapfile_monitor_dir(char *dirname)
+LOCAL void reader_libpcapfile_monitor_dir(char *dirname)
 {
     if (config.debug)
         LOG("Monitoring %s", dirname);
@@ -145,7 +154,7 @@ void reader_libpcapfile_monitor_dir(char *dirname)
     g_dir_close(dir);
 }
 /******************************************************************************/
-void reader_libpcapfile_init_monitor()
+LOCAL void reader_libpcapfile_init_monitor()
 {
     int          dir;
     monitorFd = inotify_init1(IN_NONBLOCK);
@@ -161,13 +170,13 @@ void reader_libpcapfile_init_monitor()
     }
 }
 #else
-void reader_libpcapfile_init_monitor()
+LOCAL void reader_libpcapfile_init_monitor()
 {
     LOGEXIT("Monitoring not supporting on this OS");
 }
 #endif
 /******************************************************************************/
-int reader_libpcapfile_next()
+LOCAL int reader_libpcapfile_next()
 {
     char         errbuf[1024];
     gchar       *fullfilename;
@@ -331,7 +340,7 @@ dirsDone:
     return 0;
 }
 /******************************************************************************/
-gboolean reader_libpcapfile_monitor_gfunc (gpointer UNUSED(user_data))
+LOCAL gboolean reader_libpcapfile_monitor_gfunc (gpointer UNUSED(user_data))
 {
     if (DLL_COUNT(s_, &monitorQ) == 0)
         return TRUE;
@@ -343,7 +352,7 @@ gboolean reader_libpcapfile_monitor_gfunc (gpointer UNUSED(user_data))
     return TRUE;
 }
 /******************************************************************************/
-int reader_libpcapfile_stats(MolochReaderStats_t *stats)
+LOCAL int reader_libpcapfile_stats(MolochReaderStats_t *stats)
 {
     struct pcap_stat ps;
     if (!pcap) {
@@ -360,7 +369,7 @@ int reader_libpcapfile_stats(MolochReaderStats_t *stats)
     return 0;
 }
 /******************************************************************************/
-void reader_libpcapfile_pcap_cb(u_char *UNUSED(user), const struct pcap_pkthdr *h, const u_char *bytes)
+LOCAL void reader_libpcapfile_pcap_cb(u_char *UNUSED(user), const struct pcap_pkthdr *h, const u_char *bytes)
 {
     MolochPacket_t *packet = MOLOCH_TYPE_ALLOC0(MolochPacket_t);
 
@@ -378,11 +387,11 @@ void reader_libpcapfile_pcap_cb(u_char *UNUSED(user), const struct pcap_pkthdr *
     packet->pkt           = (u_char *)bytes;
     packet->ts            = h->ts;
     packet->readerFilePos = ftell(offlineFile) - 16 - h->len;
-    packet->readerName    = offlinePcapName;
+    packet->readerPos     = readerPos;
     moloch_packet_batch(&batch, packet);
 }
 /******************************************************************************/
-gboolean reader_libpcapfile_read()
+LOCAL gboolean reader_libpcapfile_read()
 {
     // pause reading if too many waiting disk operations
     if (moloch_writer_queue_length() > 10) {
@@ -400,7 +409,6 @@ gboolean reader_libpcapfile_read()
     }
 
     int r;
-    moloch_packet_batch_init(&batch);
     if (pktsToRead > 0) {
         r = pcap_dispatch(pcap, MIN(pktsToRead, 5000), reader_libpcapfile_pcap_cb, NULL);
 
@@ -438,9 +446,12 @@ gboolean reader_libpcapfile_read()
     return TRUE;
 }
 /******************************************************************************/
-void reader_libpcapfile_opened()
+LOCAL void reader_libpcapfile_opened()
 {
     int dlt_to_linktype(int dlt);
+
+    if (config.flushBetween)
+        moloch_session_flush();
 
     moloch_packet_set_linksnap(dlt_to_linktype(pcap_datalink(pcap)) | pcap_datalink_ext(pcap), pcap_snapshot(pcap));
 
@@ -458,10 +469,10 @@ void reader_libpcapfile_opened()
         }
     }
 
-    if (config.flushBetween)
-        moloch_session_flush();
-
-    offlinePcapName = strdup(offlinePcapFilename);
+    readerPos++;
+    if (readerFileName[readerPos])
+        g_free(readerFileName[readerPos]);
+    readerFileName[readerPos] = g_strdup(offlinePcapFilename);
 
     int fd = pcap_fileno(pcap);
     if (fd == -1) {
@@ -469,10 +480,87 @@ void reader_libpcapfile_opened()
     } else {
         moloch_watch_fd(fd, MOLOCH_GIO_READ_COND, reader_libpcapfile_read, NULL);
     }
+
+    if (filenameOpsNum > 0) {
+
+        // Free any previously allocated
+        if (readerFieldOps[readerPos].size > 0)
+            moloch_field_ops_free(&readerFieldOps[readerPos]);
+
+        moloch_field_ops_init(&readerFieldOps[readerPos], filenameOpsNum, 0);
+
+        // Go thru all the filename ops looking for matches and then expand the value string
+        int i;
+        for (i = 0; i < filenameOpsNum; i++) {
+            GMatchInfo *match_info = 0;
+            g_regex_match(filenameOps[i].regex, offlinePcapFilename, 0, &match_info);
+            if (g_match_info_matches(match_info)) {
+                GError *error = 0;
+                char *expand = g_match_info_expand_references(match_info, filenameOps[i].expand, &error);
+                if (error) {
+                    LOG("Error expanding '%s' with '%s' - %s", offlinePcapFilename, filenameOps[i].expand, error->message);
+                    g_error_free(error);
+                }
+                if (expand)
+                    moloch_field_ops_add(&readerFieldOps[readerPos], filenameOps[i].field, expand, -1);
+            }
+            g_match_info_free(match_info);
+        }
+    }
 }
 
 /******************************************************************************/
-void reader_libpcapfile_start() {
+LOCAL void reader_libpcapfile_start() {
+
+
+    // Compile all the filename ops.  The formation is fieldexpr=value%value
+    // value is expanded using the g_regex_replace rules (\1 being the first capture group)
+    // https://developer.gnome.org/glib/stable/glib-Perl-compatible-regular-expressions.html#g-regex-replace
+    char **filenameOpsStr;
+    filenameOpsStr = moloch_config_str_list(NULL, "filenameOps", "");
+
+    int i;
+    for (i = 0; filenameOpsStr && filenameOpsStr[i] && i < 100; i++) {
+        if (!filenameOpsStr[i][0])
+            continue;
+
+        char *equal = strchr(filenameOpsStr[i], '=');
+        if (!equal) {
+            LOGEXIT("Must be FieldExpr=regex%%value, missing equal '%s'", filenameOpsStr[i]);
+        }
+
+        char *percent = strchr(equal+1, '%');
+        if (!percent) {
+            LOGEXIT("Must be FieldExpr=regex%%value, missing percent '%s'", filenameOpsStr[i]);
+        }
+
+        *equal = 0;
+        *percent = 0;
+
+        int elen = strlen(equal+1);
+        if (!elen) {
+            LOGEXIT("Must be FieldExpr=regex%%value, empty regex for '%s'", filenameOpsStr[i]);
+        }
+
+        int vlen = strlen(percent+1);
+        if (!vlen) {
+            LOGEXIT("Must be FieldExpr=regex%%value, empty value for '%s'", filenameOpsStr[i]);
+        }
+
+        int fieldPos = moloch_field_by_exp(filenameOpsStr[i]);
+        if (fieldPos == -1) {
+            LOGEXIT("Must be FieldExpr=regex?value, Unknown field expression '%s'", filenameOpsStr[i]);
+        }
+
+        filenameOps[filenameOpsNum].regex = g_regex_new(equal+1, 0, 0, 0);
+        filenameOps[filenameOpsNum].expand = g_strdup(percent+1);
+        if (!filenameOps[filenameOpsNum].regex)
+            LOGEXIT("Couldn't compile regex '%s'", equal+1);
+        filenameOps[filenameOpsNum].field = fieldPos;
+        filenameOpsNum++;
+    }
+
+    // Now actually start
     reader_libpcapfile_next();
     if (!pcap) {
         if (config.pcapMonitor) {
@@ -492,4 +580,5 @@ void reader_libpcapfile_init(char *UNUSED(name))
         reader_libpcapfile_init_monitor();
 
     DLL_INIT(s_, &monitorQ);
+    moloch_packet_batch_init(&batch);
 }

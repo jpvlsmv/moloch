@@ -1,79 +1,79 @@
 {
-   "sessions" : [
+   "sessions2" : [
       {
          "body" : {
-            "by2" : 119,
+            "dstASN" : "AS36040 Google LLC",
+            "dstBytes" : 119,
+            "dstDataBytes" : 111,
+            "dstGEO" : "US",
+            "dstIp" : "64.15.116.182",
+            "dstMac" : [
+               "52:54:00:12:35:02"
+            ],
+            "dstMacCnt" : 1,
+            "dstOui" : [
+               "Realtek (UpTech? also reported)"
+            ],
+            "dstOuiCnt" : 1,
+            "dstPackets" : 1,
+            "dstPayload8" : "0a79f24eb64a9c07",
+            "dstPort" : 443,
+            "dstRIR" : "ARIN",
+            "fileId" : [],
             "firstPacket" : 1462966377795,
-            "psl" : [
+            "ipProtocol" : 17,
+            "lastPacket" : 1462966377990,
+            "length" : 195,
+            "node" : "test",
+            "packetLen" : [
                1408,
                1408,
                135
             ],
-            "mac2-term" : [
-               "52:54:00:12:35:02"
-            ],
-            "mac1-term" : [
-               "08:00:27:cc:18:37"
-            ],
-            "ipSrc" : "10.0.2.15",
-            "as2" : "AS36040 Google Inc.",
-            "fpd" : 1462966377795,
-            "ipDst" : "64.15.116.182",
-            "ps" : [
+            "packetPos" : [
                24,
                1432,
                2840
             ],
-            "pa2" : 1,
-            "db1" : 2768,
-            "lpd" : 1462966377990,
-            "quic" : {
-               "version-termcnt" : 1,
-               "host-termcnt" : 1,
-               "version-term" : [
-                  "Q033"
-               ],
-               "host-term" : [
-                  "www.google.com"
-               ]
-            },
-            "rir2" : "ARIN",
-            "portSrc" : 40482,
-            "portDst" : 443,
-            "ss" : 1,
-            "a1" : "10.0.2.15",
-            "p1" : 40482,
-            "fs" : [],
-            "fb1" : "0979f24eb64a9c07",
-            "db2" : 111,
-            "db" : 2879,
-            "fp" : 1462966377,
-            "sl" : 195,
-            "pa" : 3,
-            "lastPacket" : 1462966377990,
-            "lp" : 1462966377,
-            "timestamp" : "SET",
-            "mac1-term-cnt" : 1,
-            "by1" : 2784,
-            "no" : "test",
-            "p2" : 443,
-            "pa1" : 2,
-            "pr" : 17,
-            "prot-term-cnt" : 2,
-            "fb2" : "0a79f24eb64a9c07",
-            "prot-term" : [
+            "protocol" : [
                "udp",
                "quic"
             ],
-            "g2" : "USA",
-            "mac2-term-cnt" : 1,
-            "a2" : "64.15.116.182",
-            "by" : 2903
+            "protocolCnt" : 2,
+            "quic" : {
+               "host" : [
+                  "www.google.com"
+               ],
+               "hostCnt" : 1,
+               "version" : [
+                  "Q033"
+               ],
+               "versionCnt" : 1
+            },
+            "segmentCnt" : 1,
+            "srcBytes" : 2784,
+            "srcDataBytes" : 2768,
+            "srcIp" : "10.0.2.15",
+            "srcMac" : [
+               "08:00:27:cc:18:37"
+            ],
+            "srcMacCnt" : 1,
+            "srcOui" : [
+               "PCS Computer Systems GmbH"
+            ],
+            "srcOuiCnt" : 1,
+            "srcPackets" : 2,
+            "srcPayload8" : "0979f24eb64a9c07",
+            "srcPort" : 40482,
+            "timestamp" : "SET",
+            "totBytes" : 2903,
+            "totDataBytes" : 2879,
+            "totPackets" : 3
          },
          "header" : {
             "index" : {
-               "_type" : "session",
-               "_index" : "tests_sessions-160511"
+               "_index" : "tests_sessions2-160511",
+               "_type" : "session"
             }
          }
       }

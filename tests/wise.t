@@ -1,5 +1,5 @@
 # WISE tests
-use Test::More tests => 40;
+use Test::More tests => 44;
 use MolochTest;
 use Cwd;
 use URI::Escape;
@@ -63,6 +63,12 @@ from_json('[
 {field: "tags", len: 10, value: "wisebyip2"},
 {field: "mysql.ver", len: 22, value: "wisebyip2mysqlversion"},
 {field: "test.ip", len: 12, value: "21.21.21.21"}]
+},
+{key: "fe80::211:25ff:fe82:95b5", ops:
+[{field: "tags", len: 7, value: "ipwise"},
+{field: "tags", len: 10, value: "wisebyip3"},
+{field: "mysql.ver", len: 22, value: "wisebyip3mysqlversion"},
+{field: "test.ip", len: 12, value: "22.22.22.22"}]
 }
 ]', {relaxed=>1, allow_barekey=>1}), "file:ip dump");
 
@@ -110,7 +116,7 @@ eq_or_diff($wise, 'Not found', "Zeus aol.com");
 }
 
 
-my $pwd = getcwd() . "/pcap";
+my $pwd = "*/pcap";
 
 # wise tests 2
 
@@ -135,6 +141,9 @@ my $pwd = getcwd() . "/pcap";
 
     countTest(1, "date=-1&expression=" . uri_escape("(file=$pwd/https-generalizedtime.pcap||file=$pwd/http-content-gzip.pcap)&&tags=ja3wise"));
     countTest(1, "date=-1&expression=" . uri_escape("(file=$pwd/https-generalizedtime.pcap||file=$pwd/http-content-gzip.pcap)&&tags=wisebyja31&&mysql.ver=wisebyja31mysqlversion&&test.ip=155.155.155.155"));
+
+    countTest(2, "date=-1&expression=" . uri_escape("(file=$pwd/http-content-zip.pcap||file=$pwd/smtp-zip.pcap)&&tags=sha256wise"));
+    countTest(2, "date=-1&expression=" . uri_escape("(file=$pwd/http-content-zip.pcap||file=$pwd/smtp-zip.pcap)&&tags=wisebysha2561&&mysql.ver=wisebysha2561mysqlversion&&test.ip=1::2"));
 
     countTest(2, "date=-1&expression=" . uri_escape("(file=$pwd/smtp-data-250.pcap||file=$pwd/smtp-data-521.pcap)&&tags=emailwise"));
     countTest(1, "date=-1&expression=" . uri_escape("(file=$pwd/smtp-data-250.pcap||file=$pwd/smtp-data-521.pcap)&&tags=wisesrcmatch"));

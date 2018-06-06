@@ -44,11 +44,12 @@ DIST_COMMON = $(am__configure_deps) $(srcdir)/Makefile.am \
 	$(top_srcdir)/capture/plugins/pfring/Makefile.in \
 	$(top_srcdir)/capture/plugins/snf/Makefile.in \
 	$(top_srcdir)/configure $(top_srcdir)/db/Makefile.in \
+	$(top_srcdir)/parliament/Makefile.in \
 	$(top_srcdir)/release/Makefile.in \
 	$(top_srcdir)/tests/plugins/Makefile.in \
 	$(top_srcdir)/viewer/Makefile.in \
 	$(top_srcdir)/viewer/version.js.in compile config.guess \
-	config.sub install-sh missing
+	config.sub depcomp install-sh missing ylwrap
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -61,7 +62,8 @@ CONFIG_CLEAN_FILES = capture/Makefile capture/plugins/Makefile \
 	capture/plugins/daq/Makefile capture/plugins/pfring/Makefile \
 	capture/plugins/snf/Makefile capture/plugins/lua/Makefile \
 	capture/parsers/Makefile db/Makefile tests/plugins/Makefile \
-	viewer/Makefile viewer/version.js release/Makefile
+	viewer/Makefile viewer/version.js parliament/Makefile \
+	release/Makefile
 CONFIG_CLEAN_VPATH_FILES =
 SOURCES =
 DIST_SOURCES =
@@ -141,8 +143,6 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
-GEOIP_CFLAGS = @GEOIP_CFLAGS@
-GEOIP_LIBS = @GEOIP_LIBS@
 GIT = @GIT@
 GLIB2_CFLAGS = @GLIB2_CFLAGS@
 GLIB2_LIBS = @GLIB2_LIBS@
@@ -161,6 +161,8 @@ LUA_LIBS = @LUA_LIBS@
 MAGIC_CFLAGS = @MAGIC_CFLAGS@
 MAGIC_LIBS = @MAGIC_LIBS@
 MAKEINFO = @MAKEINFO@
+MAXMINDDB_CFLAGS = @MAXMINDDB_CFLAGS@
+MAXMINDDB_LIBS = @MAXMINDDB_LIBS@
 MKDIR_P = @MKDIR_P@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
@@ -232,7 +234,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = capture db viewer release
+SUBDIRS = . capture db viewer parliament release
 all: all-recursive
 
 .SUFFIXES:
@@ -308,6 +310,8 @@ tests/plugins/Makefile: $(top_builddir)/config.status $(top_srcdir)/tests/plugin
 viewer/Makefile: $(top_builddir)/config.status $(top_srcdir)/viewer/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 viewer/version.js: $(top_builddir)/config.status $(top_srcdir)/viewer/version.js.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
+parliament/Makefile: $(top_builddir)/config.status $(top_srcdir)/parliament/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 release/Makefile: $(top_builddir)/config.status $(top_srcdir)/release/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
@@ -679,7 +683,7 @@ install-dvi: install-dvi-recursive
 
 install-dvi-am:
 
-install-exec-am:
+install-exec-am: install-exec-local
 
 install-html: install-html-recursive
 
@@ -732,12 +736,18 @@ uninstall-am:
 	distcleancheck distdir distuninstallcheck dvi dvi-am html \
 	html-am info info-am install install-am install-data \
 	install-data-am install-dvi install-dvi-am install-exec \
-	install-exec-am install-html install-html-am install-info \
-	install-info-am install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs installdirs-am maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
-	pdf-am ps ps-am tags tags-recursive uninstall uninstall-am
+	install-exec-am install-exec-local install-html \
+	install-html-am install-info install-info-am install-man \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs \
+	installdirs-am maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am tags \
+	tags-recursive uninstall uninstall-am
+
+install-exec-local:
+	npm install
+	@INSTALL@ -D package.json @prefix@/package.json
+	(cd @prefix@ ; npm install --production)
 
 config:
 	@prefix@/bin/Configure

@@ -29,12 +29,12 @@
   <sticky-sessions ng-if="$ctrl.stickySessions.length"
     sessions="$ctrl.stickySessions"></sticky-sessions>
 
-  <div class="margined-top-lg" style="min-height:300px;">
+  <div class="margined-top-lg">
 
     <!-- session data table -->
     <table ng-if=":refreshHeaders:($ctrl.headers && $ctrl.headers.length)" id="sessionsTable"
       border="0" cellpadding="0" cellspacing="0" ng-style="{width:$ctrl.tableWidth+'px'}"
-      class="table-striped">
+      class="table-striped sessions-table">
 
       <thead>
         <tr>
@@ -274,8 +274,8 @@
               <span class="fa fa-close"></span>
             </a>
             <small>
-              <session-field field="::{dbField:'prot-term', exp:'ip.protocol', type:'lotermfield', group:'general', transform:'ipProtocolLookup'}"
-                expr="ip.protocol" value="{{::session.pr}}"
+              <session-field field="::{dbField:'ipProtocol', exp:'ip.protocol', type:'lotermfield', group:'general', transform:'ipProtocolLookup'}"
+                expr="ip.protocol" value="{{::session.ipProtocol}}"
                 session="::session" parse="true" pull-left="true">
               </session-field>
             </small>
@@ -309,19 +309,9 @@
 
     <error ng-if="$ctrl.error" message="::$ctrl.error"></error>
 
-    <!-- no results -->
-    <div class="info-area vertical-horizontal-center"
-     ng-if="!$ctrl.error && !$ctrl.sessions.data.length">
-      <div ng-if="!$ctrl.loading">
-        <span class="fa fa-3x text-muted-more fa-folder-open"></span>
-        No results or none that match your search.
-        <small ng-if="$ctrl.query.view" class="text-theme-primary">
-          <br>
-          Don't forget! You have a view applied to your search:&nbsp;
-          <strong>{{::$ctrl.query.view}}</strong>
-        </small>
-      </div>
-    </div> <!-- /no results -->
+    <noresults ng-if="!$ctrl.error && !$ctrl.loading && !$ctrl.sessions.data.length"
+      records-total="{{::$ctrl.sessions.recordsTotal}}" view="{{::$ctrl.query.view}}">
+    </noresults>
 
   </div>
 

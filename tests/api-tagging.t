@@ -1,4 +1,4 @@
-use Test::More tests => 42;
+use Test::More tests => 36;
 use Cwd;
 use URI::Escape;
 use MolochTest;
@@ -6,7 +6,7 @@ use JSON;
 use Data::Dumper;
 use strict;
 
-my $pwd = getcwd() . "/pcap";
+my $pwd = "*/pcap";
 
 my $json;
 
@@ -19,22 +19,20 @@ my $json;
 # adding/removing tags test expression
     viewerPost("/addTags?date=-1&expression=file=$pwd/socks-http-example.pcap", "tags=TAGTEST1");
     esGet("/_refresh");
-    $json = countTest(3, "date=-1&fields=ta,tags-term,tacnt&expression=" . uri_escape("tags==TAGTEST1"));
+    $json = countTest(3, "date=-1&fields=tags,tagsCnt&expression=" . uri_escape("tags==TAGTEST1"));
     foreach my $item (@{$json->{data}}) {
-        is (scalar @{$item->{ta}}, scalar @{$item->{"tags-term"}}, "add: ta and tags-term match");
-        is ($item->{tacnt}, scalar @{$item->{"tags-term"}}, "add: tacnt and array size match");
+        is ($item->{tagsCnt}, scalar @{$item->{"tags"}}, "add: tagsCnt and array size match");
     }
 
     viewerPost("/removeTags?date=-1&expression=file=$pwd/socks-http-example.pcap", "tags=TAGTEST1");
     esGet("/_refresh");
     countTest(0, "date=-1&expression=" . uri_escape("tags==TAGTEST1"));
-    $json = countTest(3, "date=-1&fields=ta,tags-term,tacnt&expression=" . uri_escape("file=$pwd/socks-http-example.pcap && tags==domainwise"));
+    $json = countTest(3, "date=-1&fields=tags,tagsCnt&expression=" . uri_escape("file=$pwd/socks-http-example.pcap && tags==domainwise"));
     foreach my $item (@{$json->{data}}) {
-        is (scalar @{$item->{ta}}, scalar @{$item->{"tags-term"}}, "remove: ta and tags-term match");
-        is ($item->{tacnt}, scalar @{$item->{"tags-term"}}, "remove: tacnt and array size match");
+        is ($item->{tagsCnt}, scalar @{$item->{"tags"}}, "remove: tagsCnt and array size match");
     }
 
-# adding/removing tags test ids
+# adding/removing tags test ids - remove doesn't work on ES 2.4
     my $idQuery = viewerGet("/sessions.json?date=-1&expression=" . uri_escape("file=$pwd/socks-http-example.pcap"));
     viewerPost("/addTags?date=-1", "tags=TAGTEST2&ids=" . $idQuery->{data}->[0]->{id});
     esGet("/_refresh");
@@ -44,7 +42,7 @@ my $json;
     countTest(0, "date=-1&expression=" . uri_escape("tags==TAGTEST2"));
     countTest(3, "date=-1&expression=" . uri_escape("file=$pwd/socks-http-example.pcap && tags==domainwise"));
 
-# adding tag to no tag item
+# adding tag to no tag item - remove doesn't work on ES 2.4
     countTest(1, "date=-1&expression=" . uri_escape("file=$pwd/irc.pcap && tags!=EXISTS!"));
     viewerPost("/addTags?date=-1&expression=file=$pwd/irc.pcap", "tags=TAGTEST3");
     esGet("/_refresh");

@@ -40,17 +40,23 @@
 
       this.currentPage = 1; // always start on first page
 
+      this.UserService.getSettings()
+        .then((response) => { this.settings = response; })
+        .catch((error)   => { this.settings = { timezone:'local' }; });
+
       this.query = {
         length    : this.$routeParams.length || 50,
         start     : 0,
         filter    : null,
         sortField : 'nodeName',
-        desc      : false
+        desc      : false,
+        hide      : this.$routeParams.ghide || 'none'
       };
 
       this.graphType      = this.$routeParams.type || 'deltaPacketsPerSec';
       this.graphInterval  = this.$routeParams.gtime || '5';
       this.dataInterval   = this.$routeParams.refreshInterval ||'5000';
+      this.graphHide      = this.query.hide;
       this.graphsOpen     = true;
       this.nodeStatsOpen  = true;
       this.selectedTab    = 0; // select the first tab by default
@@ -61,10 +67,6 @@
       if (this.$routeParams.statsTab) {
         this.selectedTab = parseInt(this.$routeParams.statsTab) || 0;
       }
-
-      this.UserService.getSettings()
-        .then((response) => { this.settings = response; })
-        .catch((error)   => { this.settings = { timezone:'local' }; });
 
       // build colors array from css variables
       let styles = window.getComputedStyle(document.body);
@@ -113,6 +115,10 @@
 
         initialized = false;
         this.loadData();
+      });
+
+      this.$scope.$on('update:interval', (event, args) => {
+        this.dataInterval = args.interval;
       });
 
       // watch for the user to leave or return to the page
@@ -186,6 +192,17 @@
       this.loadData();
     }
 
+    /* fired when select input is changed for graph hide */
+    changeGraphHide() {
+      // update url param
+      this.$location.search('ghide', this.graphHide);
+
+      // reinitialize the graph with new graphHide value
+      initialized = false;
+      this.query.hide = this.graphHide;
+      this.loadData();
+    }
+
     /* fired when select input is changed for graph type */
     changeGraphType() {
       this.$location.search('type', this.graphType);
@@ -224,6 +241,9 @@
       this.selectedTab = index;
       this.$location.search('statsTab', index);
 
+      // close expanded nodes when switching tabs
+      this.expandedNodeStats = {};
+
       if (index !== 0) { // not on the nodes tab
         this.$interval.cancel(reqPromise); // cancel the node req interval
         reqPromise = null;
@@ -234,7 +254,7 @@
         initialized = false; // reinitialize the graph
         this.loadData();
 
-        if (this.dataInterval !== '0') { // set up the node req interval
+        if (this.dataInterval !== '0' && !reqPromise) { // set up the node req interval
           reqPromise = this.$interval(() => {
             this.loadData();
           }, parseInt(this.dataInterval));
@@ -257,17 +277,18 @@
           this.loading  = false;
           this.stats    = response;
 
-          this.averageValues = {};
-          this.totalValues = {};
-          var stats = this.stats.data;
-
-          var columnNames = this.columns.map(function(item) {return item.field || item.sort;});
-          columnNames.push('memoryP');
-          columnNames.push('freeSpaceP');
+          let stats = this.stats.data;
 
           if (!stats) { return; }
 
-          for (var i = 3; i < columnNames.length; i++) {
+          this.averageValues = {};
+          this.totalValues = {};
+
+          let columnNames = this.columns.map(function(item) { return item.field || item.sort; });
+          columnNames.push('memoryP');
+          columnNames.push('freeSpaceP');
+
+          for (let i = 3; i < columnNames.length; i++) {
             var columnName = columnNames[i];
 
             this.totalValues[columnName] = 0;
@@ -344,9 +365,30 @@
         }
 
         if (div[0][0]) {
+          let axis = context.axis();
+
+          let timeStr;
+          if (self.graphInterval >= 600) {
+            timeStr = '%m/%d %H:%M:%S';
+          } else {
+            timeStr = '%H:%M:%S';
+          }
+
+          let timeFormat;
+          if (self.settings.timezone === 'gmt') {
+            timeFormat = d3.time.format.utc(timeStr + 'Z');
+          } else {
+            timeFormat = d3.time.format(timeStr);
+          }
+
           div.append('div')
              .attr('class', 'axis')
-             .call(context.axis().orient('top'));
+             .attr('height', 28)
+             .call(
+               axis.orient('top')
+                 .tickFormat(timeFormat)
+                 .focusFormat(timeFormat)
+             );
 
           div.selectAll('.horizon')
              .data(metrics)

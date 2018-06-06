@@ -38,12 +38,12 @@ function VirusTotalSource (api, section) {
 
   this.contentTypes = {};
   var contentTypes = this.api.getConfig("virustotal", "contentTypes",
-          "application/x-dosexec,application/vnd.ms-cab-compressed,application/pdf,application/x-shockwave-flash,application/x-java-applet,application/jar").split(",");
+          "application/x-dosexec,application/vnd.ms-cab-compressed,application/pdf,application/x-shockwave-flash,application/x-java-applet,application/jar").split(",").map(item => item.trim());
   contentTypes.forEach((type) => { this.contentTypes[type] = 1;});
 
   this.queriesPerMinute = +this.api.getConfig("virustotal", "queriesPerMinute", 3); // Keeps us under default limit, however most wise queries will time out :(
   this.maxOutstanding = +this.api.getConfig("virustotal", "maxOutstanding", 25);
-  this.dataSources = this.api.getConfig("virustotal", "dataSources", "McAfee,Symantec,Microsoft,Kaspersky").split(",");
+  this.dataSources = this.api.getConfig("virustotal", "dataSources", "McAfee,Symantec,Microsoft,Kaspersky").split(",").map(item => item.trim());
   this.dataSourcesLC = this.dataSources.map((x) => {return x.toLowerCase();});
   this.dataFields = [];
   this.fullQuery = true;
@@ -56,17 +56,17 @@ function VirusTotalSource (api, section) {
     "  div.sessionDetailMeta.bold VirusTotal\n" +
     "  dl.sessionDetailMeta\n" +
     "    +arrayList(session.virustotal, 'hits', 'Hits', 'virustotal.hits')\n" +
-    "    +arrayList(session.virustotal, 'links-term', 'Links', 'virustotal.links')\n";
+    "    +arrayList(session.virustotal, 'links', 'Links', 'virustotal.links')\n";
 
   for(var i = 0; i < this.dataSources.length; i++) {
     var uc = this.dataSources[i];
     var lc = this.dataSourcesLC[i];
-    this.dataFields[i] = this.api.addField(`field:virustotal.${lc};db:virustotal.${lc}-term;kind:lotermfield;friendly:${uc};help:VirusTotal ${uc} Status;count:true`);
-    str += "    +arrayList(session.virustotal, '" + lc + "-term', '" + uc + "', 'virustotal." + lc + "')\n";
+    this.dataFields[i] = this.api.addField(`field:virustotal.${lc};db:virustotal.${lc};kind:lotermfield;friendly:${uc};help:VirusTotal ${uc} Status;count:true`);
+    str += "    +arrayList(session.virustotal, '" + lc + "', '" + uc + "', 'virustotal." + lc + "')\n";
   }
 
   this.hitsField = this.api.addField("field:virustotal.hits;db:virustotal.hits;kind:integer;friendly:Hits;help:VirusTotal Hits;count:true");
-  this.linksField = this.api.addField("field:virustotal.links;db:virustotal.links-term;kind:termfield;friendly:Link;help:VirusTotal Link;count:true");
+  this.linksField = this.api.addField("field:virustotal.links;db:virustotal.links;kind:termfield;friendly:Link;help:VirusTotal Link;count:true");
 
   this.api.addRightClick("virustotallinks", {name:"Open", url:"%TEXT%", fields:"virustotal.links"});
 

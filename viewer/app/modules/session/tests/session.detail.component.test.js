@@ -3,16 +3,16 @@
   'use strict';
 
   let session = {
-    pa2   :0,
-    p1    :10000,
-    no    :'node',
-    pa1   :1,
-    p2    :2948,
-    pr    :17,
-    lp    :0,
-    fp    :0,
-    a1    :16843009,
-    a2    :33686018,
+    dstPackets   :0,
+    srcPort      :10000,
+    node         :'node',
+    srcPackets   :1,
+    dstPort      :2948,
+    ipProtocol   :17,
+    lastPacket   :0,
+    firstPacket  :0,
+    srcIp    :16843009,
+    dstIp    :33686018,
     pa    :1,
     db1   :437,
     db2   :0,
@@ -43,6 +43,7 @@
 
     let scope, sessionDtlsComponent, $httpBackend, templateAsHtml;
     let sessionDtlsEndpoint = 'node/session/sessionid/detail';
+    let sessionPktsEndpoint = 'node/session/sessionid/packets?base=last&decode=%7B%7D&gzip=false&image=false&line=false&packets=last&ts=false';
     let configEndpoint      = 'molochRightClick';
     let fieldEndpoint       = 'fields';
     let decodingsEndpoint   = 'decodings';
@@ -79,6 +80,10 @@
       // query for other decodings
       $httpBackend.expectGET(decodingsEndpoint)
         .respond(200, {});
+
+      // initial query for session packets
+      $httpBackend.expectGET(sessionPktsEndpoint)
+         .respond(200, '');
 
       scope = $rootScope.$new();
 
@@ -148,12 +153,20 @@
     });
 
     it('should set promise for packet request', function() {
+      $httpBackend.expectGET(sessionPktsEndpoint)
+         .respond(200, '');
+
       sessionDtlsComponent.getPackets();
       expect(sessionDtlsComponent.packetPromise).toBeDefined();
       expect(sessionDtlsComponent.packetPromise).not.toBeNull();
+
+      $httpBackend.flush();
     });
 
     it('should cancel a query for packets', function() {
+      $httpBackend.expectGET(sessionPktsEndpoint)
+         .respond(200, '');
+
       sessionDtlsComponent.getPackets();
       expect(sessionDtlsComponent.packetPromise).toBeDefined();
       expect(sessionDtlsComponent.packetPromise).not.toBeNull();

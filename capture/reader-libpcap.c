@@ -24,7 +24,7 @@
 
 extern MolochConfig_t        config;
 
-static pcap_t               *pcaps[MAX_INTERFACES];
+LOCAL  pcap_t               *pcaps[MAX_INTERFACES];
 
 /******************************************************************************/
 int reader_libpcap_stats(MolochReaderStats_t *stats)
@@ -59,17 +59,21 @@ void reader_libpcap_pcap_cb(u_char *batch, const struct pcap_pkthdr *h, const u_
     packet->pkt           = (u_char *)bytes;
     packet->ts            = h->ts;
     packet->pktlen        = h->len;
+    packet->readerPos     = ((MolochPacketBatch_t *)batch)->readerPos;
 
     moloch_packet_batch((MolochPacketBatch_t *)batch, packet);
 }
 /******************************************************************************/
-static void *reader_libpcap_thread(gpointer pcapv)
+LOCAL void *reader_libpcap_thread(gpointer posv)
 {
-    pcap_t *pcap = pcapv;
-    LOG("THREAD %p", (gpointer)pthread_self());
+    long    pos = (long)posv;
+    pcap_t *pcap = pcaps[pos];
+    if (config.debug)
+        LOG("THREAD %p", (gpointer)pthread_self());
 
     MolochPacketBatch_t   batch;
     moloch_packet_batch_init(&batch);
+    batch.readerPos = pos;
     while (1) {
         int r = pcap_dispatch(pcap, 10000, reader_libpcap_pcap_cb, (u_char*)&batch);
         moloch_packet_batch_flush(&batch);
@@ -108,11 +112,11 @@ void reader_libpcap_start() {
 
         char name[100];
         snprintf(name, sizeof(name), "moloch-pcap%d", i);
-        g_thread_new(name, &reader_libpcap_thread, (gpointer)pcaps[i]);
+        g_thread_new(name, &reader_libpcap_thread, (gpointer)(long)i);
     }
 }
 /******************************************************************************/
-void reader_libpcap_stop() 
+void reader_libpcap_stop()
 {
     int i;
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
@@ -176,9 +180,9 @@ void reader_libpcap_init(char *UNUSED(name))
     for (i = 0; i < MAX_INTERFACES && config.interface[i]; i++) {
 
 #ifdef SNF
-        pcaps[i] = pcap_open_live(config.interface[i], config.snapLen, 1, 0, errbuf);
+        pcaps[i] = pcap_open_live(config.interface[i], config.snapLen, 1, 1000, errbuf);
 #else
-        pcaps[i] = reader_libpcap_open_live(config.interface[i], config.snapLen, 1, 0, errbuf);
+        pcaps[i] = reader_libpcap_open_live(config.interface[i], config.snapLen, 1, 1000, errbuf);
 #endif
 
         if (!pcaps[i]) {

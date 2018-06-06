@@ -32,7 +32,7 @@ var ini    = require('iniparser'),
 exports.debug = 0;
 var internals = {
     configFile: "/data/moloch/etc/config.ini",
-    nodeName: os.hostname().split(".")[0],
+    hostName: os.hostname(),
     fields: [],
     fieldsMap: {},
     categories: {}
@@ -44,6 +44,9 @@ function processArgs() {
     if (process.argv[i] === "-c") {
       i++;
       internals.configFile = process.argv[i];
+    } else if (process.argv[i] === "--host") {
+      i++;
+      internals.hostName = process.argv[i];
     } else if (process.argv[i] === "-n") {
       i++;
       internals.nodeName = process.argv[i];
@@ -54,6 +57,10 @@ function processArgs() {
     }
   }
   process.argv = args;
+
+  if (!internals.nodeName) {
+    internals.nodeName = internals.hostName.split(".")[0];
+  }
 }
 processArgs();
 
@@ -133,7 +140,7 @@ exports.sectionGet = function(section, key, defaultValue) {
   }
 
   return value;
-}
+};
 
 exports.getFull = function(node, key, defaultValue) {
   var value;
@@ -234,6 +241,10 @@ exports.nodeName = function() {
   return internals.nodeName;
 };
 
+exports.hostName = function() {
+  return internals.hostName;
+};
+
 exports.keys = function(section) {
   if (internals.config[section] === undefined) {return [];}
   return Object.keys(internals.config[section]);
@@ -326,6 +337,17 @@ exports.loadFields = function(data) {
   data.forEach((field) => {
     var source = field._source;
     source.exp = field._id;
+
+    // Add some transforms
+    if (!source.transform) {
+      if (source.exp === "http.uri") {
+        source.transform = "removeProtocol";
+      }
+      if (source.exp === "host" || source.exp.startsWith("host.")) {
+        source.transform = "removeProtocolAndURI";
+      }
+    }
+
     internals.fieldsMap[field._id] = source;
     internals.dbFieldsMap[source.dbField] = source;
     internals.fields.push(source);

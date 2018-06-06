@@ -37,7 +37,9 @@ LOCAL char                  udpTuple;
 LOCAL int                   httpHostField;
 LOCAL int                   httpXffField;
 LOCAL int                   httpMd5Field;
+LOCAL int                   httpSha256Field;
 LOCAL int                   emailMd5Field;
+LOCAL int                   emailSha256Field;
 LOCAL int                   emailSrcField;
 LOCAL int                   emailDstField;
 LOCAL int                   dnsHostField;
@@ -50,6 +52,10 @@ LOCAL uint32_t              fieldsTS;
 LOCAL int                   fieldsMap[256];
 
 LOCAL uint32_t              inflight;
+
+LOCAL char                **wiseExcludeDomains;
+LOCAL int                  *wiseExcludeDomainsLen;
+LOCAL int                   wiseExcludeDomainsNum;
 
 LOCAL const int validDNS[256] = {
     ['-'] = 1,
@@ -66,9 +72,10 @@ LOCAL const int validDNS[256] = {
 #define INTEL_TYPE_URL     4
 #define INTEL_TYPE_TUPLE   5
 #define INTEL_TYPE_JA3     6
-#define INTEL_TYPE_SIZE    7
+#define INTEL_TYPE_SHA256  7
+#define INTEL_TYPE_SIZE    8
 
-LOCAL char *wiseStrings[] = {"ip", "domain", "md5", "email", "url", "tuple", "ja3"};
+LOCAL char *wiseStrings[] = {"ip", "domain", "md5", "email", "url", "tuple", "ja3", "sha256"};
 
 #define INTEL_STAT_LOOKUP     0
 #define INTEL_STAT_CACHE      1
@@ -122,7 +129,7 @@ LOCAL MOLOCH_LOCK_DEFINE(iRequest);
 LOCAL char          *iBuf = 0;
 
 /******************************************************************************/
-int wise_item_cmp(const void *keyv, const void *elementv)
+LOCAL int wise_item_cmp(const void *keyv, const void *elementv)
 {
     char *key = (char*)keyv;
     WiseItem_t *element = (WiseItem_t *)elementv;
@@ -130,7 +137,7 @@ int wise_item_cmp(const void *keyv, const void *elementv)
     return strcmp(key, element->key) == 0;
 }
 /******************************************************************************/
-void wise_print_stats()
+LOCAL void wise_print_stats()
 {
     int i;
     for (i = 0; i < INTEL_TYPE_SIZE; i++) {
@@ -146,7 +153,7 @@ void wise_print_stats()
     }
 }
 /******************************************************************************/
-void wise_load_fields()
+LOCAL void wise_load_fields()
 {
     char                key[500];
     int                 key_len;
@@ -160,10 +167,14 @@ void wise_load_fields()
     BSB bsb;
     BSB_INIT(bsb, data, data_len);
 
-    int ver, cnt = 0;
+    int ver = -1, cnt = 0;
     BSB_IMPORT_u32(bsb, fieldsTS);
     BSB_IMPORT_u32(bsb, ver);
     BSB_IMPORT_u08(bsb, cnt);
+
+    if (ver != 0) {
+        LOGEXIT("Unsupported wise return value %d", ver);
+    }
 
     int i;
     for (i = 0; i < cnt; i++) {
@@ -179,7 +190,7 @@ void wise_load_fields()
     free(data);
 }
 /******************************************************************************/
-void wise_session_cmd_cb(MolochSession_t *session, gpointer uw1, gpointer UNUSED(uw2))
+LOCAL void wise_session_cmd_cb(MolochSession_t *session, gpointer uw1, gpointer UNUSED(uw2))
 {
     WiseItem_t    *wi = uw1;
 
@@ -189,7 +200,7 @@ void wise_session_cmd_cb(MolochSession_t *session, gpointer uw1, gpointer UNUSED
     moloch_session_decr_outstanding(session);
 }
 /******************************************************************************/
-void wise_free_item_unlocked(WiseItem_t *wi)
+LOCAL void wise_free_item_unlocked(WiseItem_t *wi)
 {
     int i;
     HASH_REMOVE(wih_, itemHash[(int)wi->type], wi);
@@ -205,7 +216,7 @@ void wise_free_item_unlocked(WiseItem_t *wi)
     MOLOCH_TYPE_FREE(WiseItem_t, wi);
 }
 /******************************************************************************/
-void wise_cb(int UNUSED(code), unsigned char *data, int data_len, gpointer uw)
+LOCAL void wise_cb(int UNUSED(code), unsigned char *data, int data_len, gpointer uw)
 {
 
     BSB             bsb;
@@ -216,7 +227,7 @@ void wise_cb(int UNUSED(code), unsigned char *data, int data_len, gpointer uw)
 
     BSB_INIT(bsb, data, data_len);
 
-    uint32_t fts = 0, ver = 0;
+    uint32_t fts = 0, ver = 0xffffffff;
     BSB_IMPORT_u32(bsb, fts);
     BSB_IMPORT_u32(bsb, ver);
 
@@ -286,7 +297,7 @@ void wise_cb(int UNUSED(code), unsigned char *data, int data_len, gpointer uw)
     MOLOCH_TYPE_FREE(WiseRequest_t, request);
 }
 /******************************************************************************/
-void wise_lookup(MolochSession_t *session, WiseRequest_t *request, char *value, int type)
+LOCAL void wise_lookup(MolochSession_t *session, WiseRequest_t *request, char *value, int type)
 {
 
     if (*value == 0)
@@ -364,7 +375,7 @@ cleanup:
     MOLOCH_UNLOCK(item);
 }
 /******************************************************************************/
-void wise_lookup_domain(MolochSession_t *session, WiseRequest_t *request, char *domain)
+LOCAL void wise_lookup_domain(MolochSession_t *session, WiseRequest_t *request, char *domain)
 {
     unsigned char *end = (unsigned char*)domain;
     unsigned char *colon = 0;
@@ -406,17 +417,35 @@ void wise_lookup_domain(MolochSession_t *session, WiseRequest_t *request, char *
         return;
     }
 
+    int l = strlen(domain);
+    int i;
+    for (i = 0; i < wiseExcludeDomainsNum; i++) {
+        if (l > wiseExcludeDomainsLen[i] && memcmp(domain + l - wiseExcludeDomainsLen[i], wiseExcludeDomains[i], wiseExcludeDomainsLen[i]) == 0) {
+            goto cleanup;
+        }
+    }
+
     wise_lookup(session, request, domain, INTEL_TYPE_DOMAIN);
 
+cleanup:
     if (colon)
         *colon = ':';
 }
 /******************************************************************************/
-void wise_lookup_ip(MolochSession_t *session, WiseRequest_t *request, uint32_t ip)
+void wise_lookup_ip4(MolochSession_t *session, WiseRequest_t *request, uint32_t ip)
 {
-    char ipstr[18];
+    char ipstr[INET_ADDRSTRLEN];
 
     snprintf(ipstr, sizeof(ipstr), "%d.%d.%d.%d", ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+
+    wise_lookup(session, request, ipstr, INTEL_TYPE_IP);
+}
+/******************************************************************************/
+void wise_lookup_ip6(MolochSession_t *session, WiseRequest_t *request, struct in6_addr *ip)
+{
+    char ipstr[INET6_ADDRSTRLEN];
+
+    inet_ntop(AF_INET6, ip, ipstr, sizeof(ipstr));
 
     wise_lookup(session, request, ipstr, INTEL_TYPE_IP);
 }
@@ -494,7 +523,6 @@ LOCAL gboolean wise_flush(gpointer UNUSED(user_data))
 void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
 {
     MolochString_t *hstring;
-    uint32_t        i;
 
     MOLOCH_LOCK(iRequest);
     if (!iRequest) {
@@ -505,13 +533,16 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
     }
 
     //IPs
-    //ALW Fix - when wise supports v6
     if (IN6_IS_ADDR_V4MAPPED(&session->addr1)) {
-        wise_lookup_ip(session, iRequest, MOLOCH_V6_TO_V4(session->addr1));
+        wise_lookup_ip4(session, iRequest, MOLOCH_V6_TO_V4(session->addr1));
+    } else {
+        wise_lookup_ip6(session, iRequest, &session->addr1);
     }
 
     if (IN6_IS_ADDR_V4MAPPED(&session->addr2)) {
-        wise_lookup_ip(session, iRequest, MOLOCH_V6_TO_V4(session->addr2));
+        wise_lookup_ip4(session, iRequest, MOLOCH_V6_TO_V4(session->addr2));
+    } else {
+        wise_lookup_ip6(session, iRequest, &session->addr2);
     }
 
 
@@ -545,7 +576,7 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
         HASH_FORALL(s_, *shash, hstring,
             if (hstring->uw) {
                 char str[1000];
-                snprintf(str, sizeof(str), "%s;%s", hstring->str, hstring->uw);
+                snprintf(str, sizeof(str), "%s;%s", hstring->str, (char*)hstring->uw);
                 wise_lookup(session, iRequest, str, INTEL_TYPE_MD5);
             } else {
                 wise_lookup(session, iRequest, hstring->str, INTEL_TYPE_MD5);
@@ -558,6 +589,29 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
         HASH_FORALL(s_, *shash, hstring,
             wise_lookup(session, iRequest, hstring->str, INTEL_TYPE_MD5);
         );
+    }
+
+    //SHA256s
+    if (config.supportSha256) {
+        if (session->fields[httpSha256Field]) {
+            MolochStringHashStd_t *shash = session->fields[httpSha256Field]->shash;
+            HASH_FORALL(s_, *shash, hstring,
+                if (hstring->uw) {
+                    char str[1000];
+                    snprintf(str, sizeof(str), "%s;%s", hstring->str, (char*)hstring->uw);
+                    wise_lookup(session, iRequest, str, INTEL_TYPE_SHA256);
+                } else {
+                    wise_lookup(session, iRequest, hstring->str, INTEL_TYPE_SHA256);
+                }
+            );
+        }
+
+        if (session->fields[emailSha256Field]) {
+            MolochStringHashStd_t *shash = session->fields[emailSha256Field]->shash;
+            HASH_FORALL(s_, *shash, hstring,
+                wise_lookup(session, iRequest, hstring->str, INTEL_TYPE_SHA256);
+            );
+        }
     }
 
     //Email
@@ -577,6 +631,16 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
 
     //URLs
     if (session->fields[httpUrlField]) {
+        MolochStringHashStd_t *shash = session->fields[httpUrlField]->shash;
+        HASH_FORALL(s_, *shash, hstring,
+            if (hstring->str[0] == 'h' && memcmp("http://", hstring->str, 7) == 0) {
+                wise_lookup_url(session, iRequest, hstring->str+7);
+            } else {
+                wise_lookup_url(session, iRequest, hstring->str);
+            }
+        );
+
+        /*
         GPtrArray *sarray =  session->fields[httpUrlField]->sarray;
 
         for(i = 0; i < sarray->len; i++) {
@@ -588,7 +652,7 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
                 wise_lookup_url(session, iRequest, str+7);
             } else
                 wise_lookup_url(session, iRequest, str);
-        }
+        }*/
     }
 
     // Tuples
@@ -611,7 +675,7 @@ void wise_plugin_pre_save(MolochSession_t *session, int UNUSED(final))
     MOLOCH_UNLOCK(iRequest);
 }
 /******************************************************************************/
-void wise_plugin_exit()
+LOCAL void wise_plugin_exit()
 {
     MOLOCH_LOCK(item);
     int h;
@@ -626,7 +690,7 @@ void wise_plugin_exit()
     MOLOCH_UNLOCK(item);
 }
 /******************************************************************************/
-uint32_t wise_plugin_outstanding()
+LOCAL uint32_t wise_plugin_outstanding()
 {
     int count;
     MOLOCH_LOCK(iRequest);
@@ -651,24 +715,45 @@ void moloch_plugin_init()
     tcpTuple = moloch_config_boolean(NULL, "wiseTcpTupleLookups", FALSE);
     udpTuple = moloch_config_boolean(NULL, "wiseUdpTupleLookups", FALSE);
 
+    char *url  = moloch_config_str(NULL, "wiseURL", NULL);
     int   port = moloch_config_int(NULL, "wisePort", 8081, 1, 0xffff);
     char *host = moloch_config_str(NULL, "wiseHost", "127.0.0.1");
 
-    httpHostField  = moloch_field_by_db("ho");
-    httpXffField   = moloch_field_by_db("xff");
-    httpMd5Field   = moloch_field_by_db("hmd5");
-    emailMd5Field  = moloch_field_by_db("emd5");
-    emailSrcField  = moloch_field_by_db("esrc");
-    emailDstField  = moloch_field_by_db("edst");
-    dnsHostField   = moloch_field_by_db("dnsho");
-    tagsField      = moloch_field_by_db("ta");
-    httpUrlField   = moloch_field_by_db("us");
-    protocolField  = moloch_field_by_db("prot-term");
-    ja3Field       = moloch_field_by_db("tlsja3-term");
+    httpHostField    = moloch_field_by_db("http.host");
+    httpXffField     = moloch_field_by_db("http.xffIp");
+    httpMd5Field     = moloch_field_by_db("http.md5");
+    emailMd5Field    = moloch_field_by_db("email.md5");
+    emailSrcField    = moloch_field_by_db("email.src");
+    emailDstField    = moloch_field_by_db("email.dst");
+    dnsHostField     = moloch_field_by_db("dns.host");
+    tagsField        = moloch_field_by_db("tags");
+    httpUrlField     = moloch_field_by_db("http.uri");
+    protocolField    = moloch_field_by_db("protocol");
+    ja3Field         = moloch_field_by_db("tls.ja3");
 
-    char hoststr[200];
-    snprintf(hoststr, sizeof(hoststr), "http://%s:%d", host, port);
-    wiseService = moloch_http_create_server(hoststr, maxConns, maxRequests, 0);
+    int i;
+    wiseExcludeDomains = moloch_config_str_list(NULL, "wiseExcludeDomains", ".in-addr.arpa;.ip6.arpa");
+    for (i = 0; wiseExcludeDomains[i]; i++);
+    wiseExcludeDomainsNum = i;
+    wiseExcludeDomainsLen = malloc(sizeof(int) * wiseExcludeDomainsNum);
+
+    for (i = 0; wiseExcludeDomains[i]; i++) {
+        wiseExcludeDomainsLen[i] = strlen(wiseExcludeDomains[i]);
+    }
+
+    if (config.supportSha256) {
+        httpSha256Field  = moloch_field_by_db("http.sha256");
+        emailSha256Field = moloch_field_by_db("email.sha256");
+    }
+
+    if (url) {
+        wiseService = moloch_http_create_server(url, maxConns, maxRequests, 0);
+    } else {
+        char hoststr[200];
+        snprintf(hoststr, sizeof(hoststr), "http://%s:%d", host, port);
+        wiseService = moloch_http_create_server(hoststr, maxConns, maxRequests, 0);
+    }
+    moloch_http_set_retries(wiseService, 1);
     g_free(host);
 
     moloch_plugins_register("wise", FALSE);

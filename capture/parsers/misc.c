@@ -16,10 +16,10 @@
 
 extern MolochConfig_t        config;
 
-static int userField;
+LOCAL  int userField;
 
 /******************************************************************************/
-void rdp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void rdp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
 
     if (len > 5 && data[3] <= len && data[4] == (data[3] - 5) && data[5] == 0xe0) {
@@ -27,19 +27,19 @@ void rdp_classify(MolochSession_t *session, const unsigned char *data, int len, 
         if (len > 30 && memcmp(data+11, "Cookie: mstshash=", 17) == 0) {
             char *end = g_strstr_len((char *)data+28, len-28, "\r\n");
             if (end)
-                moloch_field_string_add(userField, session, (char*)data+28, end - (char *)data - 28, TRUE);
+                moloch_field_string_add_lower(userField, session, (char*)data+28, end - (char *)data - 28);
         }
     }
 }
 /******************************************************************************/
-void imap_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void imap_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (moloch_memstr((const char *)data+5, len-5, "IMAP", 4)) {
         moloch_session_add_protocol(session, "imap");
     }
 }
 /******************************************************************************/
-void gh0st_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void gh0st_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (data[13] == 0x78 &&
         (((data[8] == 0) && (data[7] == 0) && (((data[6]&0xff) << (uint32_t)8 | (data[5]&0xff)) == len)) ||  // Windows
@@ -52,7 +52,7 @@ void gh0st_classify(MolochSession_t *session, const unsigned char *data, int len
     }
 }
 /******************************************************************************/
-void other220_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void other220_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (g_strstr_len((char *)data, len, "LMTP") != NULL) {
         moloch_session_add_protocol(session, "lmtp");
@@ -62,19 +62,19 @@ void other220_classify(MolochSession_t *session, const unsigned char *data, int 
     }
 }
 /******************************************************************************/
-void vnc_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void vnc_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (len >= 12 && data[7] == '.' && data[11] == 0xa)
         moloch_session_add_protocol(session, "vnc");
 }
 /******************************************************************************/
-void jabber_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void jabber_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (g_strstr_len((gchar*)data+5, len-5, "jabber") != NULL)
         moloch_session_add_protocol(session, "jabber");
 }
 /******************************************************************************/
-void user_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void user_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     //If a USER packet must have not NICK or +iw with it so we don't pickup IRC
     if (len <= 5 || moloch_memstr((char *)data, len, "\nNICK ", 6) || moloch_memstr((char *)data, len, " +iw ", 5)) {
@@ -86,27 +86,27 @@ void user_classify(MolochSession_t *session, const unsigned char *data, int len,
             break;
     }
 
-    moloch_field_string_add(userField, session, (char*)data+5, i-5, TRUE);
+    moloch_field_string_add_lower(userField, session, (char*)data+5, i-5);
 }
 /******************************************************************************/
-void misc_add_protocol_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *uw)
+LOCAL void misc_add_protocol_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *uw)
 {
     moloch_session_add_protocol(session, uw);
 }
 /******************************************************************************/
-void ntp_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void ntp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
 
-    if (session->port2 != 123 ||  // ntp port
-            len < 48 ||           // min length
-            data[1] > 16          // max stratum
+    if ((session->port1 != 123 && session->port2 != 123) ||  // ntp port
+         len < 48 ||                                         // min length
+         data[1] > 16                                        // max stratum
        ) {
         return;
     }
     moloch_session_add_protocol(session, "ntp");
 }
 /******************************************************************************/
-void snmp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void snmp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     uint32_t apc, atag, alen;
     BSB bsb;
@@ -127,7 +127,7 @@ void snmp_classify(MolochSession_t *session, const unsigned char *data, int len,
     moloch_session_add_protocol(session, "snmp");
 }
 /******************************************************************************/
-void syslog_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void syslog_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
 {
     int i;
     for (i = 2; i < len; i++) {
@@ -141,7 +141,7 @@ void syslog_classify(MolochSession_t *session, const unsigned char *UNUSED(data)
     }
 }
 /******************************************************************************/
-void stun_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void stun_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (20 + data[3] != len)
         return;
@@ -158,13 +158,13 @@ void stun_classify(MolochSession_t *session, const unsigned char *UNUSED(data), 
 
 }
 /******************************************************************************/
-void stun_rsp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void stun_rsp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (moloch_memstr((const char *)data+7, len-7, "STUN", 4))
         moloch_session_add_protocol(session, "stun");
 }
 /******************************************************************************/
-void flap_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void flap_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (len < 6)
         return;
@@ -179,20 +179,20 @@ void flap_classify(MolochSession_t *session, const unsigned char *data, int len,
         moloch_session_add_protocol(session, "flap");
 }
 /******************************************************************************/
-void tacacs_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *UNUSED(uw))
+LOCAL void tacacs_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *UNUSED(uw))
 {
     if (session->port1 == 49 || session->port2 == 49)
         moloch_session_add_protocol(session, "tacacs");
 }
 /******************************************************************************/
-void dropbox_lan_sync_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void dropbox_lan_sync_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (moloch_memstr((const char *)data+1, len-1, "host_int", 8)) {
         moloch_session_add_protocol(session, "dropbox-lan-sync");
     }
 }
 /******************************************************************************/
-void kafka_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void kafka_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (len < 50 || data[4] != 0 || data[5] > 6|| data[7] != 0 || data[8] != 0)
         return;
@@ -205,17 +205,91 @@ void kafka_classify(MolochSession_t *session, const unsigned char *data, int len
     moloch_session_add_protocol(session, "kafka");
 }
 /******************************************************************************/
-void thrift_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+LOCAL void thrift_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
 {
     if (len > 20 && data[4] == 0x80 && data[5] == 0x01 && data[6] == 0)
     moloch_session_add_protocol(session, "thrift");
 }
 /******************************************************************************/
-void rip_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *UNUSED(uw))
+LOCAL void rip_classify(MolochSession_t *session, const unsigned char *UNUSED(data), int UNUSED(len), int UNUSED(which), void *UNUSED(uw))
 {
     if (session->port2 != 520 &&  session->port1 != 520)
         return;
     moloch_session_add_protocol(session, "rip");
+}
+/******************************************************************************/
+LOCAL void isakmp_udp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+{
+    if (len < 18 ||
+            (data[16] != 8 && data[16] != 33 && data[16] != 46) ||
+            (data[17] != 0x10 && data[17] != 0x20)) {
+        return;
+    }
+    moloch_session_add_protocol(session, "isakmp");
+ }
+/******************************************************************************/
+LOCAL void aruba_papi_udp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+{
+    if (len < 20 || data[0] != 0x49 || data[1] != 0x72) {
+        return;
+    }
+    moloch_session_add_protocol(session, "aruba-papi");
+}
+/******************************************************************************/
+LOCAL void sccp_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+{
+    if (len > 20 && len >= data[0] + 8 && memcmp(data+1, "\0\0\0\0\0\0\0", 7) == 0) {
+        moloch_session_add_protocol(session, "sccp");
+    }
+}
+/******************************************************************************/
+LOCAL void mqtt_classify(MolochSession_t *session, const unsigned char *data, int len, int UNUSED(which), void *UNUSED(uw))
+{
+    if (len < 30 || memcmp("MQ", data+4, 2) != 0)
+        return;
+
+    moloch_session_add_protocol(session, "mqtt");
+
+    BSB bsb;
+
+    BSB_INIT(bsb, data, len);
+    BSB_IMPORT_skip(bsb, 2);
+
+    int nameLen = 0;
+    BSB_IMPORT_u16(bsb, nameLen);
+    BSB_IMPORT_skip(bsb, nameLen);
+
+    BSB_IMPORT_skip(bsb, 1); // version
+
+    int flags = 0;
+    BSB_IMPORT_u08(bsb, flags);
+
+    BSB_IMPORT_skip(bsb, 2); // keep alive
+
+    int idLen = 0;
+    BSB_IMPORT_u16(bsb, idLen);
+    BSB_IMPORT_skip(bsb, idLen);
+
+    if (flags & 0x04) { // will
+        int skiplen = 0;
+
+        BSB_IMPORT_u16(bsb, skiplen);
+        BSB_IMPORT_skip(bsb, skiplen);
+
+        BSB_IMPORT_u16(bsb, skiplen);
+        BSB_IMPORT_skip(bsb, skiplen);
+    }
+
+    if (flags & 0x80) {
+        int            userLen = 0;
+        unsigned char *user = 0;
+        BSB_IMPORT_u16(bsb, userLen);
+        BSB_IMPORT_ptr(bsb, user, userLen);
+
+        if (BSB_NOT_ERROR(bsb)) {
+            moloch_field_string_add_lower(userField, session, (char *)user, userLen);
+        }
+    }
 }
 /******************************************************************************/
 #define PARSERS_CLASSIFY_BOTH(_name, _uw, _offset, _str, _len, _func) \
@@ -226,9 +300,13 @@ void moloch_parser_init()
 {
     moloch_parsers_classifier_register_tcp("bt", "bittorrent", 0, (unsigned char*)"\x13" "BitTorrent protocol", 20, misc_add_protocol_classify);
     moloch_parsers_classifier_register_tcp("bt", "bittorrent", 0, (unsigned char*)"BSYNC\x00", 6, misc_add_protocol_classify);
+    /* Bitcoin main network */
+    moloch_parsers_classifier_register_tcp("bitcoin", "bitcoin", 0, (unsigned char*)"\xf9\xbe\xb4\xd9", 4, misc_add_protocol_classify);
+    /* Bitcoin namecoin fork */
+    moloch_parsers_classifier_register_tcp("bitcoin", "bitcoin", 0, (unsigned char*)"\xf9\xbe\xb4\xfe", 4, misc_add_protocol_classify);
     moloch_parsers_classifier_register_tcp("rdp", NULL, 0, (unsigned char*)"\x03\x00", 2, rdp_classify);
     moloch_parsers_classifier_register_tcp("imap", NULL, 0, (unsigned char*)"* OK ", 5, imap_classify);
-    moloch_parsers_classifier_register_tcp("pop3", "pop3", 0, (unsigned char*)"+OK POP3 ", 9, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_tcp("pop3", "pop3", 0, (unsigned char*)"+OK ", 4, misc_add_protocol_classify);
     moloch_parsers_classifier_register_tcp("gh0st", NULL, 14, 0, 0, gh0st_classify);
     moloch_parsers_classifier_register_tcp("other220", NULL, 0, (unsigned char*)"220 ", 4, other220_classify);
     moloch_parsers_classifier_register_tcp("vnc", NULL, 0, (unsigned char*)"RFB 0", 5, vnc_classify);
@@ -268,6 +346,7 @@ void moloch_parser_init()
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x1a", 1, ntp_classify);
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x1b", 1, ntp_classify);
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x1c", 1, ntp_classify);
+    moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x21", 1, ntp_classify);
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x23", 1, ntp_classify);
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\x24", 1, ntp_classify);
     moloch_parsers_classifier_register_udp("ntp", NULL, 0, (unsigned char*)"\xd9", 1, ntp_classify);
@@ -300,6 +379,7 @@ void moloch_parser_init()
     moloch_parsers_classifier_register_tcp("nsclient", "nsclient", 0, (unsigned char*)"None&", 5, misc_add_protocol_classify);
 
     moloch_parsers_classifier_register_udp("ssdp", "ssdp", 0, (unsigned char*)"M-SEARCH ", 9, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_udp("ssdp", "ssdp", 0, (unsigned char*)"NOTIFY * ", 9, misc_add_protocol_classify);
 
     moloch_parsers_classifier_register_tcp("zabbix", "zabbix", 0, (unsigned char*)"ZBXD\x01", 5, misc_add_protocol_classify);
 
@@ -320,7 +400,7 @@ void moloch_parser_init()
     moloch_parsers_classifier_register_tcp("kafka", NULL, 0, (unsigned char*)"\x00\x00", 2, kafka_classify);
 
     moloch_parsers_classifier_register_udp("steam-friends", "steam-friends", 0, (unsigned char*)"VS01", 4, misc_add_protocol_classify);
-    moloch_parsers_classifier_register_udp("value-a2s", "value-a2s", 0, (unsigned char*)"\xff\xff\xff\xff\x54\x53\x6f\x75", 8, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_udp("valve-a2s", "valve-a2s", 0, (unsigned char*)"\xff\xff\xff\xff\x54\x53\x6f\x75", 8, misc_add_protocol_classify);
     moloch_parsers_classifier_register_tcp("stream-ihscp", "stream-ihscp", 0, (unsigned char*)"\xa4\x00\x00\x00\x56\x54\x30\x31", 8, misc_add_protocol_classify);
 
     moloch_parsers_classifier_register_tcp("honeywell-tcc", "honeywell-tcc", 0, (unsigned char*)"\x43\x42\x4b\x50\x50\x52\x05\x50", 8, misc_add_protocol_classify);
@@ -336,6 +416,26 @@ void moloch_parser_init()
     moloch_parsers_classifier_register_udp("rip", NULL, 0, (unsigned char*)"\x02\x02\x00\x00", 4, rip_classify);
 
     moloch_parsers_classifier_register_tcp("nzsql", "nzsql", 0, (unsigned char*)"\x00\x00\x00\x08\x00\x01\x00\x03", 8, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_tcp("splunk", "splunk", 0, (unsigned char*)"--splunk-cooked-mode-v3--", 25, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_port("isakmp",  NULL, 500, MOLOCH_PARSERS_PORT_UDP, isakmp_udp_classify);
+
+    moloch_parsers_classifier_register_port("aruba-papi",  NULL, 8211, MOLOCH_PARSERS_PORT_UDP, aruba_papi_udp_classify);
+
+    moloch_parsers_classifier_register_tcp("x11", "x11", 0, (unsigned char*)"\x6c\x00\x0b\x00", 4, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_tcp("memcached", "memcached", 0, (unsigned char*)"flush_all", 9, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_tcp("memcached", "memcached", 0, (unsigned char*)"STORED\r\n", 8, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_tcp("memcached", "memcached", 0, (unsigned char*)"END\r\n", 5, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_udp("memcached", "memcached", 6, (unsigned char*)"\x00\x00stats", 7, misc_add_protocol_classify);
+    moloch_parsers_classifier_register_udp("memcached", "memcached", 6, (unsigned char*)"\x00\x00gets ", 7, misc_add_protocol_classify);
+
+    moloch_parsers_classifier_register_port("sccp",  NULL, 2000, MOLOCH_PARSERS_PORT_TCP_DST, sccp_classify);
+
+    moloch_parsers_classifier_register_tcp("mqtt", NULL, 0, (unsigned char*)"\x10", 1, mqtt_classify);
+
 
     userField = moloch_field_by_db("user");
 }

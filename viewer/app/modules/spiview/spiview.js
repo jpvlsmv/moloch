@@ -2,7 +2,7 @@
 
   'use strict';
 
-  const defaultSpi = 'a2:100,prot-term:100,a1:100';
+  const defaultSpi = 'dstIp:100,protocol:100,srcIp:100';
 
   // local variable to save query state
   let _query = {  // set query defaults:
@@ -165,23 +165,6 @@
             field.active = false;
 
             if (field.noFacet || field.regex) { continue; }
-            else if (field.dbField.match(/\.snow$/)) {
-              newField = {
-                friendlyName: field.friendlyName + ' Tokens',
-                dbField     : field.dbField,
-                group       : field.group,
-                exp         : field.exp
-              };
-              field.dbField = field.dbField.replace('.snow', '.raw');
-            } else if (field.rawField) {
-              newField = {
-                friendlyName: field.friendlyName + ' Tokens',
-                dbField     : field.dbField,
-                group       : field.group,
-                exp         : field.exp
-              };
-              field.dbField = field.rawField;
-            }
 
             if (this.categoryObjects.hasOwnProperty(field.group)) {
               // already created, just add a new field
@@ -350,7 +333,7 @@
 
         if (field) {
           category = SpiviewController.setupCategory(this.categoryObjects, field);
-          
+
           category.isopen   = true; // open the category to display the field
           category.loading  = true; // loading is set to false in getSingleSpiData
 
@@ -491,15 +474,23 @@
     /* updates protocols and protocol counts for categories
        should only run when issuing a new query */
     updateProtocols() {
+      // clean up any old protocols
+      for (let c in this.categoryObjects) {
+        if (this.categoryObjects.hasOwnProperty(c)) {
+          this.categoryObjects[c].protocols = {};
+        }
+      }
+
       for (let key in this.protocols) {
         if (this.protocols.hasOwnProperty(key)) {
 
           let category;
 
+          // find the category that the protocol belongs to
           if (this.categoryObjects.hasOwnProperty(key)) {
             category = this.categoryObjects[key];
           } else { // categorize special protocols that don't match category
-            if (key === 'tcp' || key === 'udp' || key === 'icmp') {
+            if (key === 'tcp' || key === 'udp' || key === 'icmp' || key === 'sctp' || key === 'esp') {
               category = this.categoryObjects.general;
             } else if (key === 'smtp' || key === 'lmtp') {
               category = this.categoryObjects.email;
@@ -507,7 +498,6 @@
           }
 
           if (category) {
-            if (!category.protocols) { category.protocols = {}; }
             category.protocols[key] = this.protocols[key];
           }
 

@@ -105,6 +105,9 @@ SimpleSource.prototype.initSimple = function() {
   case "ja3":
     this.getJa3 = this.sendResult;
     break;
+  case "sha256":
+    this.getSha256 = this.sendResult;
+    break;
   default:
     console.log(this.section, "- ERROR not loading since unknown type specified in config file", this.type);
     return false;
@@ -123,7 +126,7 @@ SimpleSource.prototype.load = function() {
     setFunc  = (key, value) => {
       var parts = key.split("/");
       try {
-        newCache.trie.add(parts[0], +parts[1] || 32, value);
+        newCache.trie.add(parts[0], +parts[1] || (parts[0].includes(':')?128:32), value);
       } catch (e) {
         console.log("ERROR adding", this.section, key, e);
       }

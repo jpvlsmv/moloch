@@ -192,12 +192,6 @@
         The types of string searches are:
       </p>
       <dl class="dl-horizontal small">
-        <dt>Token</dt>
-        <dd class="margined-bottom">
-          Some string fields are tokenized for faster searching. The query
-          engine will automatically turn the search string(s) into tokens
-          using the same algorithms as the indexing system.
-        </dd>
         <dt>Wildcard</dt>
         <dd class="margined-bottom">
           If a <code>*</code> appears in a expression, it is assumed a wildcard
@@ -222,7 +216,7 @@
         <dd class="margined-bottom">
           In Moloch, lists are used as a short hand method for doing multiple OR queries. For example
           <code>protocols == [http, ssh]</code>. This query will search for any sessions containing either http OR ssh.
-          Note: Currently a list containing wildcard or regex strings will be processed as normal tokens instead
+          Note: Currently a list containing wildcard or regex strings will be processed as normal strings instead
           of wildcards and regexes.
         </dd>
       </dl>
@@ -234,7 +228,7 @@
         IP searching is very flexible and can be performed using the full ip
         address, a partial ip address, CIDR representation. For fields
         that include a port number, it is possible to follow any of the ip
-        representations with a colon and then the port number to further refine a query. Ports are also
+        representations with a colon (ip4) or dot (ip6) and then the port number to further refine a query. Ports are also
         first class searchable and may be searched for directly. For example:
         <code>ip == 1.2.3/24:80</code>. This query will search for all sessions which contain an IP address within the 1.2.3/24 CIDR range as well as utilizing port 80 during the session.
         An IP search can also be done with list of IPs which may be in mixed representations: <code>ip == [1.2.3.4, 1.3/16]</code>
@@ -319,17 +313,17 @@
       <h4 id="examples">Examples</h4>
 
       <p>
-        Find all the sessions involving Russia (RUS) or China (CHN) that are
+        Find all the sessions involving Russia (RU) or China (CN) that are
         using port 80 and also a hostname which contains "com":
         <pre>
-          <code>(country == RUS || country == CHN) &amp;&amp; port == 80 &amp;&amp; host == *com</code>
+          <code>(country == RU || country == CN) &amp;&amp; port == 80 &amp;&amp; host == *com</code>
         </pre>
       </p>
       <p>
-        Find all the sessions of type "text/plain", involving Canada (CAN), and
+        Find all the sessions of type "text/plain", involving Canada (CA), and
         containing less than 20 packets:
         <pre>
-          <code>tags == "http:content:text/plain" &amp;&amp; country == CAN &amp;&amp; packets &lt; 20</code>
+          <code>tags == "http:content:text/plain" &amp;&amp; country == CA &amp;&amp; packets &lt; 20</code>
         </pre>
       </p>
 
@@ -441,13 +435,59 @@
         Stats
       </h3>
       <p>
-        The Stats tab provides both a visual representation and table view of the metrics listed below, per node. Additional options for filtering may also be applied.
+        The Stats tab provides both a visual representation and table view of the metrics listed below, per node. Additional options for filtering may also be applied.  The stats are reported every 2 seconds.
         Options:
       </p>
-      <p>
-        Packets/Sec, Bytes/Sec, Bits/Sec, Sessions/Sec, Input Dropped/Sec, Active Sessions, Active TCP Sessions, Active UDP Sessions, Active ICMP Sessions, Free Space (MB), Free Space (%), Memory, Memory (%), CPU, Disk Queue, ES Queue, ES Dropped/Sec, Packet Queue, Closing Queue, Waiting Queue, Fragments Queue, Active Fragments, Framents Dropped/Sec, Overload Dropped/Sec, Total Dropped/Sec.
-      </p>
-
+      <dl class="dl-horizontal small">
+        <dt>Packets/Sec</dt>
+        <dd class="margined-bottom">The number of packets that we've received that aren't corrupt that we try to add to a packetQ per second</dd>
+        <dt>Bytes/Sec</dt>
+        <dd class="margined-bottom">The size of all the packets that we've received that aren't corrupt that we try add to a packetQ per second</dd>
+        <dt>Bits/Sec</dt>
+        <dd class="margined-bottom">Same as Bytes/Sec but in bits per second</dd>
+        <dt>Sessions/Sec</dt>
+        <dd class="margined-bottom">Number of sessions sent to elasticsearch per second</dd>
+        <dt>Input Dropped/Sec</dt>
+        <dd class="margined-bottom">Number of dropped packets as reported by the OS or network card (Moloch never sees these) per second</dd>
+        <dt>Active Sessions</dt>
+        <dd class="margined-bottom">Number of sessions Moloch is currently monitoring</dd>
+        <dt>Active TCP Sessions</dt>
+        <dd class="margined-bottom">Number of TCP sessions Moloch is currently monitoring</dd>
+        <dt>Active UDP Sessions</dt>
+        <dd class="margined-bottom">Number of UDP sessions Moloch is currently monitoring</dd>
+        <dt>Active ICMP Sessions</dt>
+        <dd class="margined-bottom">Number of ICMP sessions Moloch is currently monitoring</dd>
+        <dt>Free Space MB</dt>
+        <dd class="margined-bottom">Free space in MB across all configured disks</dd>
+        <dt>Free Space %</dt>
+        <dd class="margined-bottom">Percentage of free space across all configured disks</dd>
+        <dt>Memory</dt>
+        <dd class="margined-bottom">Amount of memory that Moloch is using</dd>
+        <dt>Memory %</dt>
+        <dd class="margined-bottom">Perentage of memory that Moloch is using</dd>
+        <dt>CPU</dt>
+        <dd class="margined-bottom">CPU percentage that Moloch is using</dd>
+        <dt>Disk Queue</dt>
+        <dd class="margined-bottom">Number of blocks of data that are waiting to be written to disk</dd>
+        <dt>ES Queue</dt>
+        <dd class="margined-bottom">Number of elasticsearch requests that are waiting to be sent</dd>
+        <dt>ES Dropped/Sec</dt>
+        <dd class="margined-bottom">Number of elasticsearch requests that were dropped because of queue overflow per second</dd>
+        <dt>Packet Queue</dt>
+        <dd class="margined-bottom">Number of packets that are waiting to processed</dd>
+        <dt>Closing Queue</dt>
+        <dd class="margined-bottom">Number of TCP sessions that have received a FIN and Moloch is waiting to see if actually closed</dd>
+        <dt>Waiting Queue</dt>
+        <dd class="margined-bottom">Number of sessions that are ready to be written but are waiting on an asynchronus request (wise, plugins) to finish</dd>
+        <dt>Active Fragments</dt>
+        <dd class="margined-bottom">Number of packets that are waiting on remaining IP fragments to show up</dd>
+        <dt>Fragments Dropped/Sec</dt>
+        <dd class="margined-bottom">Number of packets that were dropped because frag overload or timeouts</dd>
+        <dt>Overload Dropped/Sec</dt>
+        <dd class="margined-bottom">Number of packets dropped because there was no packet queue that was free to process them on</dd>
+        <dt>Total Dropped/Sec</dt>
+        <dd class="margined-bottom">Sum of the inputs dropped and overload metrics</dd>
+      </dl>
       <hr>
 
       <h3 id="history">

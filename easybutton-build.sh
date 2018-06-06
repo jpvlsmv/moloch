@@ -1,5 +1,5 @@
 #!/bin/sh
-# Use this script to install OS dependencies, downloading and compile moloch dependencies, and compile moloch capture.
+# Use this script to install OS dependencies, downloading and compile moloch dependencies, compile moloch capture, optionally install
 
 # This script will
 # * use apt-get/yum to install OS dependancies
@@ -7,22 +7,25 @@
 # * build them statically
 # * configure moloch-capture to use them
 # * build moloch-capture
+# * install node unless --nonode
+# * install moloch if --install
 
 
-GLIB=2.52.3
-YARA=3.6.3
-GEOIP=1.6.11
+GLIB=2.54.3
+YARA=3.7.1
+MAXMIND=1.3.2
 PCAP=1.8.1
-CURL=7.55.0
+CURL=7.59.0
 LUA=5.3.4
 DAQ=2.0.6
-NODE=6.11.5
+NODE=8.11.1
 
 TDIR="/data/moloch"
 DOPFRING=0
 DODAQ=0
 DOCLEAN=0
 DONODE=1
+DOINSTALL=0
 
 while :
 do
@@ -43,12 +46,26 @@ do
     DOCLEAN=1
     shift
     ;;
+  --install)
+    DOINSTALL=1
+    shift
+    ;;
   --nonode)
     DONODE=0
     shift
     ;;
+  --help)
+    echo "Make it easier to build Moloch!  This will download and build thirdparty libraries plus build Moloch."
+    echo "--dir <directory>   = The directory to install everything into [/data/moloch]"
+    echo "--clean             = Do a 'make clean' first"
+    echo "--install           = Do a 'make install' at the end, adding our node to the path"
+    echo "--nonode            = Do NOT download and install nodejs into the moloch directory"
+    echo "--pfring            = Build pfring support"
+    echo "--daq               = Build daq support"
+    exit 0;
+    ;;
   -*)
-    echo "Unknown option '$1'"
+    echo "Unknown option '$1', try '--help'"
     exit 1
     ;;
   *)
@@ -65,7 +82,7 @@ MAKE=make
 # Installing dependencies
 echo "MOLOCH: Installing Dependencies"
 if [ -f "/etc/redhat-release" ]; then
-  sudo yum -y install wget curl pcre pcre-devel pkgconfig flex bison gcc-c++ zlib-devel e2fsprogs-devel openssl-devel file-devel make gettext libuuid-devel perl-JSON bzip2-libs bzip2-devel perl-libwww-perl libpng-devel xz libffi-devel readline-devel libtool libyaml-devel
+  sudo yum -y install wget curl pcre pcre-devel pkgconfig flex bison gcc-c++ zlib-devel e2fsprogs-devel openssl-devel file-devel make gettext libuuid-devel perl-JSON bzip2-libs bzip2-devel perl-libwww-perl libpng-devel xz libffi-devel readline-devel libtool libyaml-devel perl-Socket6
   if [ $? -ne 0 ]; then
     echo "MOLOCH: yum failed"
     exit 1
@@ -73,7 +90,7 @@ if [ -f "/etc/redhat-release" ]; then
 fi
 
 if [ -f "/etc/debian_version" ]; then
-  sudo apt-get -y install wget curl libpcre3-dev uuid-dev libmagic-dev pkg-config g++ flex bison zlib1g-dev libffi-dev gettext libgeoip-dev make libjson-perl libbz2-dev libwww-perl libpng-dev xz-utils libffi-dev libssl-dev libreadline-dev libtool libyaml-dev dh-autoreconf
+  sudo apt-get -y install wget curl libpcre3-dev uuid-dev libmagic-dev pkg-config g++ flex bison zlib1g-dev libffi-dev gettext libgeoip-dev make libjson-perl libbz2-dev libwww-perl libpng-dev xz-utils libffi-dev libssl-dev libreadline-dev libtool libyaml-dev dh-autoreconf libsocket6-perl
   if [ $? -ne 0 ]; then
     echo "MOLOCH: apt-get failed"
     exit 1
@@ -136,35 +153,29 @@ else
   echo "MOLOCH: Not rebuilding yara"
 fi
 
-# GeoIP
-if [ ! -f "GeoIP-$GEOIP.tar.gz" ]; then
-  wget https://github.com/maxmind/geoip-api-c/releases/download/v$GEOIP/GeoIP-$GEOIP.tar.gz
+# Maxmind
+if [ ! -f "libmaxminddb-$MAXMIND.tar.gz" ]; then
+  wget https://github.com/maxmind/libmaxminddb/releases/download/$MAXMIND/libmaxminddb-$MAXMIND.tar.gz
 fi
 
-if [ ! -f "GeoIP-$GEOIP/libGeoIP/.libs/libGeoIP.a" ]; then
-tar zxf GeoIP-$GEOIP.tar.gz
+if [ ! -f "libmaxminddb-$MAXMIND/src/.libs/libmaxminddb.a" ]; then
+  tar zxf libmaxminddb-$MAXMIND.tar.gz
 
-# Crossing fingers, this is no longer needed
-# Not sure why this is required on some platforms
-#  if [ -f "/usr/bin/libtoolize" ]; then
-#    (cd GeoIP-$GEOIP ; libtoolize -f)
-#  fi
-
-  (cd GeoIP-$GEOIP ; ./configure --enable-static; $MAKE)
+  (cd libmaxminddb-$MAXMIND ; ./configure --enable-static; $MAKE)
   if [ $? -ne 0 ]; then
     echo "MOLOCH: $MAKE failed"
     exit 1
   fi
 else
-  echo "MOLOCH: Not rebuilding libGeoIP"
+  echo "MOLOCH: Not rebuilding libmaxmind"
 fi
 
 # libpcap
 if [ ! -f "libpcap-$PCAP.tar.gz" ]; then
   wget http://www.tcpdump.org/release/libpcap-$PCAP.tar.gz
 fi
-tar zxf libpcap-$PCAP.tar.gz
 if [ ! -f "libpcap-$PCAP/libpcap.a" ]; then
+  tar zxf libpcap-$PCAP.tar.gz
   echo "MOLOCH: Building libpcap";
   (cd libpcap-$PCAP; ./configure --disable-dbus --disable-usb --disable-canusb --disable-bluetooth --with-snf=no; $MAKE)
   if [ $? -ne 0 ]; then
@@ -184,7 +195,7 @@ fi
 
 if [ ! -f "curl-$CURL/lib/.libs/libcurl.a" ]; then
   tar zxf curl-$CURL.tar.gz
-  ( cd curl-$CURL; ./configure --disable-ldap --disable-ldaps --without-libidn --without-librtmp; $MAKE)
+  ( cd curl-$CURL; ./configure --disable-ldap --disable-ldaps --without-libidn2 --without-librtmp --without-libpsl --without-nghttp2 --without-nghttp2 --without-nss; $MAKE)
   if [ $? -ne 0 ]; then
     echo "MOLOCH: $MAKE failed"
     exit 1
@@ -231,8 +242,8 @@ fi
 # Now build moloch
 echo "MOLOCH: Building capture"
 cd ..
-echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA"
-./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara/yara-$YARA --with-GeoIP=thirdparty/GeoIP-$GEOIP $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA
+echo "./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara/yara-$YARA --with-maxminddb=thirdparty/libmaxminddb-$MAXMIND $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA"
+./configure --prefix=$TDIR $PCAPBUILD --with-yara=thirdparty/yara/yara-$YARA --with-maxminddb=thirdparty/libmaxminddb-$MAXMIND $WITHGLIB --with-curl=thirdparty/curl-$CURL --with-lua=thirdparty/lua-$LUA
 
 if [ $DOCLEAN -eq 1 ]; then
     $MAKE clean
@@ -269,6 +280,13 @@ if [ $DONODE -eq 1 ] && [ ! -f "$TDIR/bin/node" ]; then
     (cd $TDIR/bin ; sudo ln -s ../node-v$NODE-linux-x64/bin/* .)
 fi
 
-echo "MOLOCH: Now type 'sudo make install' and 'sudo make config'"
+if [ $DOINSTALL -eq 1 ]; then
+    export PATH=$TDIR/bin:$PATH
+    sudo make install
+    echo "MOLOCH: Installed, now type sudo make config'"
+else
+    echo "MOLOCH: Now type 'sudo make install' and 'sudo make config'"
+fi
+
 
 exit 0
